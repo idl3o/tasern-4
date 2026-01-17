@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useAccount } from "wagmi";
 import { useWebLLM } from "@/hooks/useWebLLM";
+import { useLocalOllama } from "@/hooks/useLocalOllama";
 import { WebLLMSetup } from "./WebLLMSetup";
 
 interface StoryMessage {
@@ -36,7 +37,7 @@ export function StoryInterface() {
   const [isLoading, setIsLoading] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [showWebLLMSetup, setShowWebLLMSetup] = useState(false);
-  const [llmSource, setLlmSource] = useState<"webllm" | "server" | null>(null);
+  const [llmSource, setLlmSource] = useState<"local-ollama" | "webllm" | "server" | null>(null);
   const [serverStatus, setServerStatus] = useState<ServerLLMStatus | null>(null);
   const [checkingServer, setCheckingServer] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -48,6 +49,13 @@ export function StoryInterface() {
     hasDeclinedWebLLM,
     generate: webLLMGenerate,
   } = useWebLLM();
+
+  const {
+    available: localOllamaAvailable,
+    isChecking: checkingLocalOllama,
+    selectedModel: localOllamaModel,
+    generate: localOllamaGenerate,
+  } = useLocalOllama();
 
   // Check server LLM status on mount
   useEffect(() => {
@@ -77,6 +85,35 @@ export function StoryInterface() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // World context for local generation
+  const WORLD_CONTEXT = `You are the narrator for Tales of Tasern, an interactive fiction experience.
+Tasern exists at the edge of reality, where time moves slowly. It orbits twin suns and has three moons.
+In Tasern, BELIEF IS MAGIC - what enough minds hold true becomes true.
+Write in second person with rich, evocative prose. Never break character.`;
+
+  // Generate using local Ollama (browser direct)
+  const generateWithLocalOllama = useCallback(
+    async (prompt: string, messageId: string) => {
+      try {
+        let fullContent = "";
+        for await (const chunk of localOllamaGenerate(prompt, WORLD_CONTEXT)) {
+          fullContent += chunk;
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === messageId ? { ...msg, content: fullContent } : msg
+            )
+          );
+        }
+        setLlmSource("local-ollama");
+        return true;
+      } catch (e) {
+        console.error("[Local Ollama] Generation failed:", e);
+        return false;
+      }
+    },
+    [localOllamaGenerate]
+  );
 
   // Generate using WebLLM (browser)
   const generateWithWebLLM = useCallback(
@@ -163,7 +200,7 @@ export function StoryInterface() {
     [address]
   );
 
-  // Smart generate with fallback chain: WebLLM → Server (Ollama → Anthropic)
+  // Smart generate with fallback chain: Local Ollama → WebLLM → Server
   const smartGenerate = useCallback(
     async (
       action: "start" | "continue",
@@ -171,7 +208,15 @@ export function StoryInterface() {
       history: StoryMessage[],
       messageId: string
     ) => {
-      // Try WebLLM first if ready and preferred
+      // Try local Ollama first (browser direct to localhost)
+      if (localOllamaAvailable) {
+        console.log("[AI] Trying local Ollama (browser direct)...");
+        const success = await generateWithLocalOllama(prompt, messageId);
+        if (success) return;
+        console.log("[AI] Local Ollama failed, trying next...");
+      }
+
+      // Try WebLLM if ready and preferred
       if (webLLMReady && preferWebLLM && !hasDeclinedWebLLM) {
         console.log("[AI] Trying WebLLM...");
         const success = await generateWithWebLLM(prompt, history, messageId);
@@ -179,7 +224,7 @@ export function StoryInterface() {
         console.log("[AI] WebLLM failed, falling back to server...");
       }
 
-      // Fall back to server
+      // Fall back to server API
       console.log("[AI] Using server API...");
       const success = await generateWithServer(
         action,
@@ -203,6 +248,8 @@ export function StoryInterface() {
       }
     },
     [
+      localOllamaAvailable,
+      generateWithLocalOllama,
       webLLMReady,
       preferWebLLM,
       hasDeclinedWebLLM,
@@ -293,8 +340,9 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
   }
 
   // Determine if ANY AI is available
-  const hasAnyAI = webLLMReady || serverStatus?.serverAvailable;
+  const hasAnyAI = localOllamaAvailable || webLLMReady || serverStatus?.serverAvailable;
   const isLoadingWebLLM = webLLMStatus === "downloading" || webLLMStatus === "loading";
+  const isCheckingAI = checkingServer || checkingLocalOllama;
 
   // Pre-story screen
   if (!hasStarted) {
@@ -317,29 +365,33 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
 
           {/* AI Status indicator */}
           <div className="text-sm space-y-2">
-            {checkingServer ? (
+            {isCheckingAI ? (
               <span className="text-parchment/50">● Checking AI availability...</span>
             ) : (
               <>
+                {localOllamaAvailable && (
+                  <div className="text-green-400">● Local Ollama Ready ({localOllamaModel})</div>
+                )}
+
                 {webLLMReady ? (
                   <div className="text-green-400">● Browser AI Ready</div>
                 ) : isLoadingWebLLM ? (
                   <div className="text-gold">● Loading Browser AI...</div>
                 ) : null}
 
-                {serverStatus?.local.available ? (
-                  <div className="text-green-400">● Local Server (Ollama) Ready</div>
-                ) : serverStatus?.anthropic.available ? (
+                {serverStatus?.anthropic.available && (
                   <div className="text-green-400">● Cloud AI (Anthropic) Ready</div>
-                ) : !webLLMReady && !isLoadingWebLLM ? (
+                )}
+
+                {!hasAnyAI && !isLoadingWebLLM && (
                   <div className="text-red-400/80">● No AI Backend Available</div>
-                ) : null}
+                )}
               </>
             )}
           </div>
 
           {/* No AI warning */}
-          {!checkingServer && !hasAnyAI && !isLoadingWebLLM && (
+          {!isCheckingAI && !hasAnyAI && !isLoadingWebLLM && (
             <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 text-sm text-parchment/80">
               <p className="font-semibold text-red-400 mb-2">No AI Available</p>
               <p className="mb-3">To play, you need at least one AI option:</p>
@@ -357,7 +409,7 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
               className="btn-primary text-lg disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={!hasAnyAI && !isLoadingWebLLM}
             >
-              {checkingServer ? "Checking..." : "Begin Your Story"}
+              {isCheckingAI ? "Checking..." : "Begin Your Story"}
             </button>
 
             {shouldOfferWebLLM && (
@@ -446,7 +498,8 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
             </p>
             {llmSource && (
               <p className="text-parchment/30">
-                {llmSource === "webllm" ? "🖥️ Browser AI" : "☁️ Server AI"}
+                {llmSource === "local-ollama" ? "🏠 Local Ollama" :
+                 llmSource === "webllm" ? "🖥️ Browser AI" : "☁️ Server AI"}
               </p>
             )}
           </div>
