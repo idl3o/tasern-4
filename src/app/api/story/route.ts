@@ -111,7 +111,7 @@ Continue the story based on the player's action. React to what they do naturally
 Write 2-4 paragraphs continuing the narrative. End in a way that invites further action.`;
     }
 
-    const result = streamText({
+    const result = await streamText({
       model,
       system: systemContext,
       prompt,
@@ -119,12 +119,14 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
       temperature: 0.8,
     });
 
-    // Add LLM info to response headers
-    const response = result.toTextStreamResponse();
-    response.headers.set("X-LLM-Provider", config.provider);
-    response.headers.set("X-LLM-Model", config.model);
-
-    return response;
+    // Return streaming response with LLM info headers
+    return new Response(result.textStream, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "X-LLM-Provider": config.provider,
+        "X-LLM-Model": config.model,
+      },
+    });
   } catch (error) {
     console.error("Story API error:", error);
     return new Response(
