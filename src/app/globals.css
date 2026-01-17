@@ -1,0 +1,337 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=Uncial+Antiqua&display=swap');
+
+/* ==================== CSS VARIABLES ==================== */
+:root {
+  /* Primary Palette */
+  --color-void: #0a0a0f;
+  --color-parchment: #F4E4C1;
+  --color-gold: #D4AF37;
+  --color-bronze: #8B6914;
+  --color-leather: #5C4033;
+  --color-stone: #6B7280;
+
+  /* Cosmic */
+  --color-tear: #ff4500;
+  --color-castle: #ffd700;
+
+  /* D&D Accents */
+  --color-arcane: #9932CC;
+  --color-crimson: #DC143C;
+  --color-forest: #228B22;
+  --color-midnight: #191970;
+
+  /* Shadows */
+  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.15);
+  --shadow-medium: 0 4px 16px rgba(0, 0, 0, 0.25);
+  --shadow-strong: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --glow-gold: 0 0 20px rgba(212, 175, 55, 0.4);
+  --glow-tear: 0 0 30px rgba(255, 69, 0, 0.3);
+
+  /* Typography */
+  --font-heading: 'Cinzel', serif;
+  --font-body: 'Crimson Text', serif;
+  --font-accent: 'Uncial Antiqua', cursive;
+}
+
+/* ==================== BASE STYLES ==================== */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-void);
+  background-image:
+    radial-gradient(ellipse at 20% 30%, rgba(139, 105, 20, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 70%, rgba(212, 175, 55, 0.02) 0%, transparent 50%);
+  color: var(--color-parchment);
+  font-family: var(--font-body);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+/* ==================== SCROLLBAR ==================== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(244, 228, 193, 0.05);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 175, 55, 0.5);
+}
+
+/* ==================== TYPOGRAPHY ==================== */
+h1, h2, h3, h4 {
+  font-family: var(--font-heading);
+  color: var(--color-gold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+h1 {
+  font-size: 2.5rem;
+  text-shadow: var(--glow-gold);
+}
+
+h2 {
+  font-size: 1.75rem;
+}
+
+h3 {
+  font-size: 1.25rem;
+}
+
+/* ==================== STORY TEXT ==================== */
+.story-text {
+  @apply leading-relaxed text-lg;
+  font-family: var(--font-body);
+  text-shadow: 0 0 20px rgba(244, 228, 193, 0.05);
+}
+
+.story-text p {
+  @apply mb-4;
+}
+
+.story-text em {
+  @apply text-gold not-italic;
+  text-shadow: 0 0 10px rgba(212, 175, 55, 0.3);
+}
+
+.story-text strong {
+  @apply text-parchment font-semibold;
+}
+
+/* ==================== FORM ELEMENTS ==================== */
+.story-input {
+  @apply bg-transparent border border-gold/30 rounded-lg px-4 py-3;
+  @apply text-parchment placeholder-parchment/40;
+  @apply focus:outline-none focus:border-gold/60 focus:ring-1 focus:ring-gold/30;
+  @apply transition-all duration-200;
+  font-family: var(--font-body);
+  font-size: 1.1rem;
+}
+
+.story-input:disabled {
+  @apply opacity-50 cursor-not-allowed;
+}
+
+/* ==================== BUTTONS ==================== */
+.btn-primary {
+  @apply px-6 py-2 rounded-lg;
+  @apply transition-all duration-200;
+  @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  background: linear-gradient(135deg, rgba(139, 105, 20, 0.4) 0%, rgba(26, 20, 16, 0.8) 100%);
+  border: 2px solid var(--color-gold);
+  color: var(--color-gold);
+  font-family: var(--font-heading);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 0.875rem;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.3) 0%, rgba(139, 105, 20, 0.4) 100%);
+  box-shadow: var(--glow-gold);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  @apply px-4 py-2 rounded-lg;
+  @apply transition-all duration-200;
+  background: rgba(92, 64, 51, 0.4);
+  border: 1px solid var(--color-bronze);
+  color: var(--color-parchment);
+  font-family: var(--font-body);
+}
+
+.btn-secondary:hover {
+  background: rgba(92, 64, 51, 0.6);
+  border-color: var(--color-gold);
+}
+
+/* ==================== CARDS & PANELS ==================== */
+.panel {
+  background: linear-gradient(135deg, rgba(139, 105, 20, 0.15) 0%, rgba(26, 20, 16, 0.9) 100%);
+  border: 2px solid var(--color-bronze);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+}
+
+.panel-gold {
+  border-color: var(--color-gold);
+  box-shadow: var(--glow-gold);
+}
+
+/* ==================== GLOW EFFECTS ==================== */
+.glow-gold {
+  box-shadow: var(--glow-gold);
+}
+
+.glow-tear {
+  box-shadow: var(--glow-tear);
+}
+
+.text-glow-gold {
+  text-shadow: 0 0 10px rgba(212, 175, 55, 0.8);
+}
+
+/* ==================== DIVIDERS ==================== */
+.divider {
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0%, var(--color-bronze) 50%, transparent 100%);
+  opacity: 0.5;
+}
+
+.divider-gold {
+  background: linear-gradient(90deg, transparent 0%, var(--color-gold) 50%, transparent 100%);
+}
+
+/* ==================== ANIMATIONS ==================== */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Loading dots */
+.loading-dots::after {
+  content: '.';
+  animation: ellipsis 1.5s infinite;
+}
+
+@keyframes ellipsis {
+  0% { content: '.'; }
+  33% { content: '..'; }
+  66% { content: '...'; }
+}
+
+/* ==================== DECORATIVE ELEMENTS ==================== */
+.corner-decoration {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+}
+
+.corner-tl {
+  top: 8px;
+  left: 8px;
+  border-top: 2px solid var(--color-gold);
+  border-left: 2px solid var(--color-gold);
+}
+
+.corner-tr {
+  top: 8px;
+  right: 8px;
+  border-top: 2px solid var(--color-gold);
+  border-right: 2px solid var(--color-gold);
+}
+
+.corner-bl {
+  bottom: 8px;
+  left: 8px;
+  border-bottom: 2px solid var(--color-gold);
+  border-left: 2px solid var(--color-gold);
+}
+
+.corner-br {
+  bottom: 8px;
+  right: 8px;
+  border-bottom: 2px solid var(--color-gold);
+  border-right: 2px solid var(--color-gold);
+}
+
+/* ==================== MOBILE OPTIMIZATIONS ==================== */
+@media (max-width: 768px) {
+  body {
+    font-size: 16px; /* Prevents iOS zoom */
+  }
+
+  h1 {
+    font-size: 1.75rem;
+  }
+
+  h2 {
+    font-size: 1.5rem;
+  }
+
+  .story-text {
+    font-size: 1rem;
+  }
+
+  .btn-primary, .btn-secondary {
+    min-height: 48px;
+    padding: 12px 20px;
+  }
+}
+
+/* ==================== SAFE AREA (iPhone notch) ==================== */
+@supports (padding: env(safe-area-inset-top)) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* ==================== REDUCED MOTION ==================== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ==================== FACTION COLORS ==================== */
+.faction-elves { --faction-color: #065F46; }
+.faction-dwarves { --faction-color: #78716C; }
+.faction-durgan { --faction-color: #D4AF37; }
+.faction-pirates { --faction-color: #1E3A8A; }
+.faction-igypt { --faction-color: #92400E; }
+.faction-dragons { --faction-color: #7A200D; }
+.faction-orks { --faction-color: #1F2937; }
+.faction-druids { --faction-color: #2d5016; }
