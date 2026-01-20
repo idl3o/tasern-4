@@ -32,6 +32,7 @@ export function StoryInterface() {
   const [hasStarted, setHasStarted] = useState(false);
   const [showWebLLMSetup, setShowWebLLMSetup] = useState(false);
   const [llmSource, setLlmSource] = useState<"local-ollama" | "webllm" | null>(null);
+  const [showAdvancedSetup, setShowAdvancedSetup] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -289,47 +290,47 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
 
           {/* No AI warning */}
           {!isCheckingAI && !hasAnyAI && !isLoadingWebLLM && (
-            <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 text-sm text-parchment/80">
-              <p className="font-semibold text-red-400 mb-2">No AI Available</p>
-              <p className="mb-3">Choose how to power your story:</p>
+            <div className="bg-void/50 border border-gold/30 rounded-lg p-4 text-sm text-parchment/80">
+              <p className="font-semibold text-gold mb-2">AI Required</p>
+              <p className="text-parchment/60 mb-4">
+                Click below to download the storytelling engine (~2GB). Runs entirely in your browser - no installation needed.
+              </p>
 
-              <div className="text-left space-y-4">
-                {/* Browser AI Option */}
-                <div className="bg-green-900/20 border border-green-500/30 rounded p-3">
-                  <span className="text-green-400 font-medium">✨ Browser AI (Easiest)</span>
-                  <p className="text-xs mt-1 text-parchment/60">
-                    Click the button below to download a ~2GB model. Runs entirely in your browser - no installation needed.
-                  </p>
-                </div>
+              {/* Advanced: Local Ollama Option */}
+              <div className="border-t border-gold/20 pt-3 mt-3">
+                <button
+                  onClick={() => setShowAdvancedSetup(!showAdvancedSetup)}
+                  className="text-xs text-parchment/40 hover:text-parchment/60 flex items-center gap-1"
+                >
+                  <span className={`transition-transform ${showAdvancedSetup ? 'rotate-90' : ''}`}>▶</span>
+                  Advanced: Use local Ollama instead
+                </button>
 
-                {/* Local Ollama Option */}
-                <div className="bg-blue-900/20 border border-blue-500/30 rounded p-3">
-                  <span className="text-blue-400 font-medium">🦙 Local Ollama (Faster)</span>
-                  <p className="text-xs mt-1 text-parchment/60 mb-2">
-                    Better performance if you have Ollama installed locally.
-                  </p>
-                  <ol className="text-xs space-y-1.5 text-parchment/50 list-decimal list-inside">
-                    <li>
-                      Install from{" "}
-                      <a href="https://ollama.ai" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline hover:text-blue-300">
-                        ollama.ai
-                      </a>
-                    </li>
-                    <li>
-                      Open a terminal and run:{" "}
-                      <code className="bg-gray-800 px-1.5 py-0.5 rounded text-green-400">ollama pull llama3.2</code>
-                    </li>
-                    <li>
-                      Start Ollama with web access enabled:
-                      <div className="mt-1 p-2 bg-gray-800 rounded font-mono text-green-400 select-all text-[10px]">
-                        {typeof window !== 'undefined' && navigator.platform?.includes('Win')
-                          ? 'set OLLAMA_ORIGINS=https://tasern-4.vercel.app && ollama serve'
-                          : 'OLLAMA_ORIGINS=https://tasern-4.vercel.app ollama serve'}
-                      </div>
-                    </li>
-                    <li>Refresh this page</li>
-                  </ol>
-                </div>
+                {showAdvancedSetup && (
+                  <div className="mt-3 p-3 bg-gray-900/50 rounded text-xs text-parchment/50">
+                    <p className="mb-2 text-parchment/60">For faster performance with local Ollama:</p>
+                    <ol className="space-y-1.5 list-decimal list-inside">
+                      <li>
+                        Install from{" "}
+                        <a href="https://ollama.ai" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline hover:text-blue-300">
+                          ollama.ai
+                        </a>
+                      </li>
+                      <li>
+                        Run: <code className="bg-gray-800 px-1 rounded text-green-400">ollama pull llama3.2</code>
+                      </li>
+                      <li>
+                        Start with CORS enabled:
+                        <div className="mt-1 p-2 bg-gray-800 rounded font-mono text-green-400 select-all text-[10px]">
+                          {typeof window !== 'undefined' && navigator.platform?.includes('Win')
+                            ? 'set OLLAMA_ORIGINS=https://tasern-4.vercel.app && ollama serve'
+                            : 'OLLAMA_ORIGINS=https://tasern-4.vercel.app ollama serve'}
+                        </div>
+                      </li>
+                      <li>Refresh this page</li>
+                    </ol>
+                  </div>
+                )}
               </div>
             </div>
           )}
