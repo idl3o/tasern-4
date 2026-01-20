@@ -291,10 +291,23 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
           {!isCheckingAI && !hasAnyAI && !isLoadingWebLLM && (
             <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 text-sm text-parchment/80">
               <p className="font-semibold text-red-400 mb-2">No AI Available</p>
-              <p className="mb-3">To play, you need at least one AI option:</p>
-              <ul className="text-left space-y-1 text-parchment/60">
-                <li>• <span className="text-gold">Ollama</span> - Install from ollama.ai and run locally</li>
-                <li>• <span className="text-gold">Browser AI</span> - Click below to download (~2GB)</li>
+              <p className="mb-3">Choose how to power your story:</p>
+              <ul className="text-left space-y-2 text-parchment/60">
+                <li>
+                  <span className="text-gold font-medium">Browser AI (Recommended)</span>
+                  <p className="text-xs mt-1">Click below to download ~2GB model. Runs entirely in your browser - no setup needed.</p>
+                </li>
+                <li>
+                  <span className="text-gold font-medium">Local Ollama</span>
+                  <p className="text-xs mt-1">
+                    Install from <a href="https://ollama.ai" target="_blank" rel="noopener noreferrer" className="underline hover:text-gold">ollama.ai</a>.
+                    {typeof window !== 'undefined' && window.location.hostname !== 'localhost' && (
+                      <span className="block mt-1 text-yellow-400/80">
+                        ⚠ Web mode requires CORS: run <code className="bg-gray-800 px-1 rounded">OLLAMA_ORIGINS=* ollama serve</code>
+                      </span>
+                    )}
+                  </p>
+                </li>
               </ul>
             </div>
           )}

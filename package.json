@@ -8,8 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:dev": "cross-env TAURI_BUILD=true tauri dev",
+    "tauri:build": "cross-env TAURI_BUILD=true tauri build"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^0.0.56",
@@ -34,6 +34,7 @@
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "autoprefixer": "^10.4.16",
+    "cross-env": "^10.1.0",
     "eslint": "^8.55.0",
     "eslint-config-next": "14.2.21",
     "postcss": "^8.4.32",
