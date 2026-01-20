@@ -2,81 +2,62 @@
 
 An AI-powered interactive fiction experience set in the Tasern Universe - a world at the edge of existence where belief shapes reality.
 
-## Desktop App (Recommended)
+## Play Now
 
-Tasern 4 runs as a native desktop app powered by [Tauri](https://tauri.app), with AI storytelling via local [Ollama](https://ollama.ai).
+**[tasern-4.vercel.app](https://tasern-4.vercel.app)**
 
-### Quick Start
+No installation required. Works in any modern browser.
 
-1. **Install Ollama** from [ollama.ai](https://ollama.ai/download)
-2. **Pull the model**: `ollama pull llama3.2`
-3. **Download Tasern** from [Releases](https://github.com/idl3o/tasern-4/releases)
-4. **Run the installer** and launch Tasern
+### How It Works
 
-The app will guide you through setup if Ollama isn't detected.
+Tasern uses AI to generate your story in real-time. Choose your AI backend:
 
-### Building from Source
+| Option | Setup | Performance |
+|--------|-------|-------------|
+| **Browser AI** | None - click to download ~2GB model | Good (runs in browser via WebLLM) |
+| **Local Ollama** | Install Ollama + enable CORS | Better (runs natively) |
 
-**Prerequisites:**
-- Node.js 18+
-- Rust (install via [rustup](https://rustup.rs))
-- Ollama
+### Using Local Ollama (Optional)
 
+For faster response times, run Ollama locally:
+
+1. Install [Ollama](https://ollama.ai/download)
+2. Pull a model: `ollama pull llama3.2`
+3. Start with web access enabled:
+
+**Mac/Linux:**
 ```bash
-git clone https://github.com/idl3o/tasern-4.git
-cd tasern-4
-npm install
-
-# Development (with hot reload)
-npm run tauri:dev
-
-# Build installer
-npm run tauri:build
+OLLAMA_ORIGINS=* ollama serve
 ```
 
-Installers are output to `src-tauri/target/release/bundle/`
+**Windows:**
+```cmd
+set OLLAMA_ORIGINS=* && ollama serve
+```
+
+4. Refresh the web app - it will detect Ollama automatically
+
+Your stories stay on your machine. The web app connects directly to your local Ollama.
+
+---
+
+## Desktop App
+
+For the full offline experience, download the native Windows app.
+
+**[Download from Releases](https://github.com/idl3o/tasern-4/releases)**
+
+The desktop app manages Ollama automatically - no CORS configuration needed.
+
+---
 
 ## Features
 
-- **Local AI storytelling** - Powered by Ollama, runs entirely on your machine
+- **AI-driven storytelling** - Every playthrough is unique
 - **Rich world lore** - 8 factions, unique cosmology, detailed geography
-- **Privacy-first** - No cloud services required, your stories stay local
-- **WebLLM fallback** - Can run AI in-browser if Ollama unavailable
+- **Privacy-first** - No cloud AI services, everything runs locally
+- **Multiple AI options** - Ollama (local) or WebLLM (browser)
 - **Optional Web3** - Wallet connection available but not required
-
-## Tech Stack
-
-- **Desktop**: Tauri 2.0 (Rust + WebView)
-- **Frontend**: Next.js 14, React 18, TypeScript
-- **Styling**: Tailwind CSS with custom fantasy theme
-- **AI**: Ollama (local), WebLLM (browser fallback)
-- **Web3**: RainbowKit, Wagmi (optional)
-
-## Project Structure
-
-```
-tasern-4/
-├── src-tauri/           # Tauri desktop app
-│   ├── src/lib.rs       # Ollama management commands
-│   └── tauri.conf.json  # App configuration
-├── content/             # World lore for AI context
-│   ├── world-context.md
-│   ├── factions.md
-│   ├── geography.md
-│   └── moons.md
-├── src/
-│   ├── app/             # Next.js App Router
-│   ├── components/      # React components
-│   │   ├── IntroSequence.tsx
-│   │   ├── StoryInterface.tsx
-│   │   ├── OllamaSetup.tsx
-│   │   └── WebLLMSetup.tsx
-│   └── hooks/
-│       ├── useTauri.ts      # Tauri integration
-│       ├── useLocalOllama.ts
-│       └── useWebLLM.ts
-└── CLAUDE.md            # AI assistant context
-```
 
 ## The Tasern Universe
 
@@ -99,20 +80,57 @@ Tasern exists where dying worlds drain - a place of slow gravity at the edge of 
 | Orks of Orklin | Industrial revolution, war machines |
 | Druids | Balance keepers, growth and rot |
 
+---
+
 ## Development
 
+### Quick Start
+
 ```bash
-# Start development server
-npm run tauri:dev
+git clone https://github.com/idl3o/tasern-4.git
+cd tasern-4
+npm install
+npm run dev
+```
 
-# Build static export only
-npm run build
+Open [localhost:3333](http://localhost:3333)
 
-# Build desktop installer
-npm run tauri:build
+### Build Commands
 
-# Lint
-npm run lint
+```bash
+# Web development
+npm run dev           # Start dev server (port 3333)
+npm run build         # Build for Vercel/web deployment
+
+# Desktop development (requires Rust)
+npm run tauri:dev     # Dev with hot reload
+npm run tauri:build   # Build Windows installer
+```
+
+### Tech Stack
+
+- **Frontend**: Next.js 14, React 18, TypeScript, Tailwind CSS
+- **Desktop**: Tauri 2.0 (Rust + WebView)
+- **AI**: Ollama (local), WebLLM (browser)
+- **Web3**: RainbowKit, Wagmi (optional)
+
+### Project Structure
+
+```
+tasern-4/
+├── src/
+│   ├── app/              # Next.js App Router
+│   ├── components/       # React components
+│   │   ├── StoryInterface.tsx
+│   │   ├── IntroSequence.tsx
+│   │   └── OllamaSetup.tsx
+│   └── hooks/
+│       ├── useLocalOllama.ts   # Browser-direct Ollama
+│       ├── useWebLLM.ts        # In-browser AI
+│       └── useTauri.ts         # Desktop integration
+├── src-tauri/            # Desktop app (Tauri)
+├── content/              # World lore for AI context
+└── CLAUDE.md             # AI assistant context
 ```
 
 ## License
