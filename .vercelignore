@@ -1,0 +1,14 @@
+# Tauri / Rust artifacts
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Node
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# IDE
+.idea/
+.vscode/
