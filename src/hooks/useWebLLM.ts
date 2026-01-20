@@ -39,12 +39,14 @@ export function useWebLLM() {
     engine,
     preferWebLLM,
     hasDeclinedWebLLM,
+    hasDownloadedOnce,
     setStatus,
     setProgress,
     setError,
     setEngine,
     setPreferWebLLM,
     setHasDeclined,
+    setHasDownloadedOnce,
     reset,
   } = useWebLLMStore();
 
@@ -113,6 +115,7 @@ export function useWebLLM() {
 
       setEngine(newEngine);
       setStatus("ready");
+      setHasDownloadedOnce(true);
       console.log("[WebLLM] Engine ready");
     } catch (e) {
       console.error("[WebLLM] Initialization failed:", e);
@@ -120,7 +123,15 @@ export function useWebLLM() {
     } finally {
       initializingRef.current = false;
     }
-  }, [engine, status, checkSupport, setStatus, setProgress, setError, setEngine]);
+  }, [engine, status, checkSupport, setStatus, setProgress, setError, setEngine, setHasDownloadedOnce]);
+
+  // Auto-initialize if user has downloaded before (model is cached in browser)
+  useEffect(() => {
+    if (hasDownloadedOnce && status === "idle" && !engine) {
+      console.log("[WebLLM] Auto-initializing from cached model...");
+      initialize();
+    }
+  }, [hasDownloadedOnce, status, engine, initialize]);
 
   // Generate text with streaming
   const generate = useCallback(
@@ -192,6 +203,7 @@ export function useWebLLM() {
     isLoading: status === "downloading" || status === "loading",
     preferWebLLM,
     hasDeclinedWebLLM,
+    hasDownloadedOnce,
 
     // Actions
     initialize,

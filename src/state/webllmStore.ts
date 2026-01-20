@@ -23,6 +23,7 @@ export interface WebLLMState {
   // Preferences
   preferWebLLM: boolean;
   hasDeclinedWebLLM: boolean;
+  hasDownloadedOnce: boolean;
 
   // Actions
   setStatus: (status: WebLLMStatus) => void;
@@ -31,6 +32,7 @@ export interface WebLLMState {
   setEngine: (engine: any) => void;
   setPreferWebLLM: (prefer: boolean) => void;
   setHasDeclined: (declined: boolean) => void;
+  setHasDownloadedOnce: (downloaded: boolean) => void;
   reset: () => void;
 }
 
@@ -55,6 +57,7 @@ export const useWebLLMStore = create<WebLLMState>()(
       engine: null,
       preferWebLLM: true,
       hasDeclinedWebLLM: false,
+      hasDownloadedOnce: false,
 
       setStatus: (status) => set({ status }),
       setProgress: (progress, text) => set({ progress, progressText: text || "" }),
@@ -62,6 +65,7 @@ export const useWebLLMStore = create<WebLLMState>()(
       setEngine: (engine) => set({ engine, status: engine ? "ready" : "idle" }),
       setPreferWebLLM: (prefer) => set({ preferWebLLM: prefer }),
       setHasDeclined: (declined) => set({ hasDeclinedWebLLM: declined }),
+      setHasDownloadedOnce: (downloaded) => set({ hasDownloadedOnce: downloaded }),
       reset: () => set({
         status: "idle",
         progress: 0,
@@ -75,6 +79,7 @@ export const useWebLLMStore = create<WebLLMState>()(
       partialize: (state) => ({
         preferWebLLM: state.preferWebLLM,
         hasDeclinedWebLLM: state.hasDeclinedWebLLM,
+        hasDownloadedOnce: state.hasDownloadedOnce,
         modelId: state.modelId,
       }),
     }
