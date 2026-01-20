@@ -71,7 +71,7 @@ export function IntroSequence({ onComplete }: IntroSequenceProps) {
         {/* Text box */}
         <div
           className={`
-            bg-void/80 border border-gold/30 rounded-lg p-8 md:p-12
+            relative bg-void/80 border border-gold/30 rounded-lg p-8 md:p-12
             backdrop-blur-sm transition-opacity duration-300
             ${isTransitioning ? "opacity-0" : "opacity-100"}
           `}
