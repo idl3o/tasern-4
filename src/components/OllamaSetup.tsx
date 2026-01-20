@@ -129,7 +129,7 @@ export default function OllamaSetup({ onReady }: OllamaSetupProps) {
               Ollama is installed but not running.
               {isInTauri
                 ? ' Click below to start it.'
-                : ' Please start it from your terminal.'}
+                : ' Open a terminal and run the command below.'}
             </p>
             {isInTauri ? (
               <button
@@ -142,9 +142,14 @@ export default function OllamaSetup({ onReady }: OllamaSetupProps) {
             ) : (
               <div className="p-4 bg-gray-700/50 rounded-lg mb-4 text-left">
                 <p className="text-xs text-gray-400 mb-2">Run this in your terminal:</p>
-                <code className="text-green-400">OLLAMA_ORIGINS=* ollama serve</code>
-                <p className="text-xs text-yellow-400/70 mt-2">
-                  The OLLAMA_ORIGINS flag enables browser access from this website.
+                <div className="p-2 bg-gray-800 rounded font-mono text-green-400 select-all text-sm">
+                  {typeof window !== 'undefined' && navigator.platform?.includes('Win')
+                    ? 'set OLLAMA_ORIGINS=* && ollama serve'
+                    : 'OLLAMA_ORIGINS=* ollama serve'}
+                </div>
+                <p className="text-xs text-gray-500 mt-3">
+                  💡 <span className="text-yellow-400/70">OLLAMA_ORIGINS=*</span> allows this website to connect to your local Ollama.
+                  Your data stays on your machine.
                 </p>
               </div>
             )}

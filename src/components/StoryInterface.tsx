@@ -292,23 +292,45 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
             <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 text-sm text-parchment/80">
               <p className="font-semibold text-red-400 mb-2">No AI Available</p>
               <p className="mb-3">Choose how to power your story:</p>
-              <ul className="text-left space-y-2 text-parchment/60">
-                <li>
-                  <span className="text-gold font-medium">Browser AI (Recommended)</span>
-                  <p className="text-xs mt-1">Click below to download ~2GB model. Runs entirely in your browser - no setup needed.</p>
-                </li>
-                <li>
-                  <span className="text-gold font-medium">Local Ollama</span>
-                  <p className="text-xs mt-1">
-                    Install from <a href="https://ollama.ai" target="_blank" rel="noopener noreferrer" className="underline hover:text-gold">ollama.ai</a>.
-                    {typeof window !== 'undefined' && window.location.hostname !== 'localhost' && (
-                      <span className="block mt-1 text-yellow-400/80">
-                        ⚠ Web mode requires CORS: run <code className="bg-gray-800 px-1 rounded">OLLAMA_ORIGINS=* ollama serve</code>
-                      </span>
-                    )}
+
+              <div className="text-left space-y-4">
+                {/* Browser AI Option */}
+                <div className="bg-green-900/20 border border-green-500/30 rounded p-3">
+                  <span className="text-green-400 font-medium">✨ Browser AI (Easiest)</span>
+                  <p className="text-xs mt-1 text-parchment/60">
+                    Click the button below to download a ~2GB model. Runs entirely in your browser - no installation needed.
                   </p>
-                </li>
-              </ul>
+                </div>
+
+                {/* Local Ollama Option */}
+                <div className="bg-blue-900/20 border border-blue-500/30 rounded p-3">
+                  <span className="text-blue-400 font-medium">🦙 Local Ollama (Faster)</span>
+                  <p className="text-xs mt-1 text-parchment/60 mb-2">
+                    Better performance if you have Ollama installed locally.
+                  </p>
+                  <ol className="text-xs space-y-1.5 text-parchment/50 list-decimal list-inside">
+                    <li>
+                      Install from{" "}
+                      <a href="https://ollama.ai" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline hover:text-blue-300">
+                        ollama.ai
+                      </a>
+                    </li>
+                    <li>
+                      Open a terminal and run:{" "}
+                      <code className="bg-gray-800 px-1.5 py-0.5 rounded text-green-400">ollama pull llama3.2</code>
+                    </li>
+                    <li>
+                      Start Ollama with web access enabled:
+                      <div className="mt-1 p-2 bg-gray-800 rounded font-mono text-green-400 select-all">
+                        {typeof window !== 'undefined' && navigator.platform?.includes('Win')
+                          ? 'set OLLAMA_ORIGINS=* && ollama serve'
+                          : 'OLLAMA_ORIGINS=* ollama serve'}
+                      </div>
+                    </li>
+                    <li>Refresh this page</li>
+                  </ol>
+                </div>
+              </div>
             </div>
           )}
 
