@@ -46,6 +46,10 @@ next-env.d.ts
 # Claude Code
 .claude/
 
+# Tauri / Rust
+src-tauri/target/
+src-tauri/gen/schemas/
+
 # Accidental Windows files
 nul
 

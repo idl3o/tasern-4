@@ -6,7 +6,7 @@
 
 Tasern 4 is a **multiplayer, AI-driven storytelling platform** where players explore a living universe through interactive fiction. Like AI Dungeon, the system uses LLMs to generate narrative—but grounded in the rich, belief-powered world of Tasern.
 
-**Core Loop**: Connect wallet → Enter Tasern → AI generates your story → Your choices shape the world
+**Core Loop**: Launch app → Enter Tasern → AI generates your story → Your choices shape the world
 
 ---
 
@@ -108,34 +108,38 @@ First question: *What do you believe?* — because in Tasern, that has consequen
 
 ---
 
-## Technical Direction
+## Technical Architecture
 
-### From Tasern 3 (to leverage)
+### Desktop App (Primary)
+- **Tauri 2.0** - Rust backend, WebView frontend
+- **Ollama** - Local LLM for story generation
+- **Next.js 14** - Static export for UI
+- **WebLLM** - Browser fallback if Ollama unavailable
+
+### Stack
 - React 18 + TypeScript
-- Web3: RainbowKit, Wagmi, Polygon
+- Tailwind CSS (fantasy theme)
+- Web3: RainbowKit, Wagmi (optional)
 - State: Zustand + Immer
-- Deployment: Vercel
 
-### New Systems Needed
-
+### Key Files
 ```
-Priority 1 - MVP:
-├── Story interface (text input/output)
-├── Wallet connection
-├── Context management (load lore, track state)
-└── Basic LLM integration
+src-tauri/
+├── src/lib.rs           # Ollama management (check/start/pull)
+└── tauri.conf.json      # App configuration
 
-Priority 2 - Enhancement:
-├── Character persistence (on-chain or off-chain)
-├── Location/faction awareness
-├── Multiplayer story threads
-└── NPC memory
+src/
+├── hooks/useTauri.ts    # Tauri API wrapper
+├── hooks/useLocalOllama.ts  # Browser-direct Ollama
+├── components/OllamaSetup.tsx  # Setup wizard
+└── components/StoryInterface.tsx  # Main game UI
+```
 
-Priority 3 - Web3 Deep:
-├── Token-gated content
-├── NFT character minting
-├── Lore contribution system
-└── Governance voting
+### Commands
+```bash
+npm run tauri:dev    # Development with hot reload
+npm run tauri:build  # Build Windows installer
+npm run build        # Static export only
 ```
 
 ---
@@ -180,9 +184,15 @@ Priority 3 - Web3 Deep:
 - [x] Faction documentation (all 8 with tensions)
 - [x] Geography documentation (continents, regions)
 - [x] Moon documentation (three moons, influences)
+- [x] Tauri desktop app wrapper
+- [x] Ollama integration (browser-direct + Tauri management)
+- [x] Story interface with streaming responses
+- [x] WebLLM fallback for offline play
+- [x] Intro sequence and setup wizard
+- [x] Wallet connection (optional)
 
 **Next**:
-- [ ] Story hooks / scenario templates
+- [ ] Story persistence (save/load)
 - [ ] Character creation prompts
-- [ ] Prototype story interface
-- [ ] LLM integration planning
+- [ ] Faction-aware storytelling
+- [ ] Multiplayer story threads

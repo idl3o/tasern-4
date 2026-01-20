@@ -2,15 +2,16 @@
 
 import { useState } from "react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { useAccount } from "wagmi";
 import { StoryInterface } from "@/components/StoryInterface";
-import { WelcomeScreen } from "@/components/WelcomeScreen";
 import { IntroSequence } from "@/components/IntroSequence";
+import OllamaSetup from "@/components/OllamaSetup";
+import { useTauri } from "@/hooks/useTauri";
 
 export default function Home() {
-  const { isConnected } = useAccount();
   const [showIntro, setShowIntro] = useState(true);
   const [introComplete, setIntroComplete] = useState(false);
+  const [ollamaReady, setOllamaReady] = useState(false);
+  const { isInTauri, ollamaStatus } = useTauri();
 
   const handleIntroComplete = () => {
     setShowIntro(false);
@@ -20,6 +21,12 @@ export default function Home() {
   // Show intro sequence first (only once)
   if (showIntro && !introComplete) {
     return <IntroSequence onComplete={handleIntroComplete} />;
+  }
+
+  // In Tauri context, show Ollama setup if not ready
+  // Skip this in browser since StoryInterface handles its own AI detection
+  if (isInTauri && !ollamaReady && !ollamaStatus.running) {
+    return <OllamaSetup onReady={() => setOllamaReady(true)} />;
   }
 
   return (
@@ -40,7 +47,7 @@ export default function Home() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
-        {isConnected ? <StoryInterface /> : <WelcomeScreen />}
+        <StoryInterface />
       </div>
 
       {/* Footer */}

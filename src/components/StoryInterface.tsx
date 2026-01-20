@@ -13,12 +13,6 @@ interface StoryMessage {
   timestamp: number;
 }
 
-interface ServerLLMStatus {
-  local: { available: boolean; url: string; model: string };
-  anthropic: { available: boolean };
-  active: "local" | "anthropic" | "none";
-  serverAvailable: boolean;
-}
 
 const START_PROMPT = `Begin an interactive story for a new arrival to Tasern.
 
@@ -31,15 +25,13 @@ Do NOT ask them questions directly. Simply narrate their arrival and leave space
 Keep the opening to 2-3 paragraphs. Make it memorable.`;
 
 export function StoryInterface() {
-  const { address } = useAccount();
+  const { address, isConnected } = useAccount();
   const [messages, setMessages] = useState<StoryMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [showWebLLMSetup, setShowWebLLMSetup] = useState(false);
-  const [llmSource, setLlmSource] = useState<"local-ollama" | "webllm" | "server" | null>(null);
-  const [serverStatus, setServerStatus] = useState<ServerLLMStatus | null>(null);
-  const [checkingServer, setCheckingServer] = useState(true);
+  const [llmSource, setLlmSource] = useState<"local-ollama" | "webllm" | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -56,27 +48,6 @@ export function StoryInterface() {
     selectedModel: localOllamaModel,
     generate: localOllamaGenerate,
   } = useLocalOllama();
-
-  // Check server LLM status on mount
-  useEffect(() => {
-    async function checkServerStatus() {
-      try {
-        const res = await fetch("/api/llm/status");
-        const data = await res.json();
-        setServerStatus(data);
-      } catch {
-        setServerStatus({
-          local: { available: false, url: "", model: "" },
-          anthropic: { available: false },
-          active: "none",
-          serverAvailable: false,
-        });
-      } finally {
-        setCheckingServer(false);
-      }
-    }
-    checkServerStatus();
-  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -143,64 +114,7 @@ Write in second person with rich, evocative prose. Never break character.`;
     [webLLMGenerate]
   );
 
-  // Generate using server API (Ollama → Anthropic)
-  const generateWithServer = useCallback(
-    async (
-      action: "start" | "continue",
-      playerAction: string | undefined,
-      history: StoryMessage[],
-      messageId: string
-    ) => {
-      try {
-        const response = await fetch("/api/story", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action,
-            playerAction,
-            history: history.map((m) => ({
-              role: m.role,
-              content: m.content,
-            })),
-            address,
-          }),
-        });
-
-        if (!response.ok) throw new Error("Server request failed");
-
-        // Check which LLM was used
-        const provider = response.headers.get("X-LLM-Provider");
-        setLlmSource(provider === "local" ? "server" : "server");
-
-        const reader = response.body?.getReader();
-        const decoder = new TextDecoder();
-
-        if (reader) {
-          let fullContent = "";
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value);
-            fullContent += chunk;
-
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === messageId ? { ...msg, content: fullContent } : msg
-              )
-            );
-          }
-        }
-        return true;
-      } catch (e) {
-        console.error("[Server] Generation failed:", e);
-        return false;
-      }
-    },
-    [address]
-  );
-
-  // Smart generate with fallback chain: Local Ollama → WebLLM → Server
+  // Smart generate with fallback chain: Local Ollama → WebLLM
   const smartGenerate = useCallback(
     async (
       action: "start" | "continue",
@@ -213,48 +127,35 @@ Write in second person with rich, evocative prose. Never break character.`;
         console.log("[AI] Trying local Ollama (browser direct)...");
         const success = await generateWithLocalOllama(prompt, messageId);
         if (success) return;
-        console.log("[AI] Local Ollama failed, trying next...");
+        console.log("[AI] Local Ollama failed, trying WebLLM...");
       }
 
-      // Try WebLLM if ready and preferred
-      if (webLLMReady && preferWebLLM && !hasDeclinedWebLLM) {
+      // Try WebLLM if ready
+      if (webLLMReady) {
         console.log("[AI] Trying WebLLM...");
         const success = await generateWithWebLLM(prompt, history, messageId);
         if (success) return;
-        console.log("[AI] WebLLM failed, falling back to server...");
+        console.log("[AI] WebLLM failed");
       }
 
-      // Fall back to server API
-      console.log("[AI] Using server API...");
-      const success = await generateWithServer(
-        action,
-        action === "continue" ? prompt : undefined,
-        history,
-        messageId
+      // No AI available - show error
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId
+            ? {
+                ...msg,
+                content:
+                  "The threads of fate tangle... something interferes with your arrival. (No AI available - please ensure Ollama is running)",
+              }
+            : msg
+        )
       );
-
-      if (!success) {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === messageId
-              ? {
-                  ...msg,
-                  content:
-                    "The threads of fate tangle... something interferes with your arrival. (Connection error - please try again)",
-                }
-              : msg
-          )
-        );
-      }
     },
     [
       localOllamaAvailable,
       generateWithLocalOllama,
       webLLMReady,
-      preferWebLLM,
-      hasDeclinedWebLLM,
       generateWithWebLLM,
-      generateWithServer,
     ]
   );
 
@@ -340,9 +241,9 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
   }
 
   // Determine if ANY AI is available
-  const hasAnyAI = localOllamaAvailable || webLLMReady || serverStatus?.serverAvailable;
+  const hasAnyAI = localOllamaAvailable || webLLMReady;
   const isLoadingWebLLM = webLLMStatus === "downloading" || webLLMStatus === "loading";
-  const isCheckingAI = checkingServer || checkingLocalOllama;
+  const isCheckingAI = checkingLocalOllama;
 
   // Pre-story screen
   if (!hasStarted) {
@@ -379,10 +280,6 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
                   <div className="text-gold">● Loading Browser AI...</div>
                 ) : null}
 
-                {serverStatus?.anthropic.available && (
-                  <div className="text-green-400">● Cloud AI (Anthropic) Ready</div>
-                )}
-
                 {!hasAnyAI && !isLoadingWebLLM && (
                   <div className="text-red-400/80">● No AI Backend Available</div>
                 )}
@@ -396,9 +293,8 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
               <p className="font-semibold text-red-400 mb-2">No AI Available</p>
               <p className="mb-3">To play, you need at least one AI option:</p>
               <ul className="text-left space-y-1 text-parchment/60">
+                <li>• <span className="text-gold">Ollama</span> - Install from ollama.ai and run locally</li>
                 <li>• <span className="text-gold">Browser AI</span> - Click below to download (~2GB)</li>
-                <li>• <span className="text-gold">Ollama</span> - Run <code className="bg-void/50 px-1 rounded">ollama serve</code> locally</li>
-                <li>• <span className="text-gold">Anthropic</span> - Add ANTHROPIC_API_KEY to .env.local</li>
               </ul>
             </div>
           )}
@@ -426,9 +322,11 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
             )}
           </div>
 
-          <p className="text-parchment/40 text-sm">
-            Connected as {address?.slice(0, 6)}...{address?.slice(-4)}
-          </p>
+          {isConnected && address && (
+            <p className="text-parchment/40 text-sm">
+              Connected as {address.slice(0, 6)}...{address.slice(-4)}
+            </p>
+          )}
         </div>
       </div>
     );
@@ -498,8 +396,7 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
             </p>
             {llmSource && (
               <p className="text-parchment/30">
-                {llmSource === "local-ollama" ? "🏠 Local Ollama" :
-                 llmSource === "webllm" ? "🖥️ Browser AI" : "☁️ Server AI"}
+                {llmSource === "local-ollama" ? "🏠 Local Ollama" : "🖥️ Browser AI"}
               </p>
             )}
           </div>

@@ -143,6 +143,11 @@ h3 {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   font-size: 0.875rem;
+  cursor: pointer;
+  pointer-events: auto;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .btn-primary:hover:not(:disabled) {
