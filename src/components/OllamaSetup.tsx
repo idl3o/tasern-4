@@ -142,13 +142,13 @@ export default function OllamaSetup({ onReady }: OllamaSetupProps) {
             ) : (
               <div className="p-4 bg-gray-700/50 rounded-lg mb-4 text-left">
                 <p className="text-xs text-gray-400 mb-2">Run this in your terminal:</p>
-                <div className="p-2 bg-gray-800 rounded font-mono text-green-400 select-all text-sm">
+                <div className="p-2 bg-gray-800 rounded font-mono text-green-400 select-all text-xs">
                   {typeof window !== 'undefined' && navigator.platform?.includes('Win')
-                    ? 'set OLLAMA_ORIGINS=* && ollama serve'
-                    : 'OLLAMA_ORIGINS=* ollama serve'}
+                    ? 'set OLLAMA_ORIGINS=https://tasern-4.vercel.app && ollama serve'
+                    : 'OLLAMA_ORIGINS=https://tasern-4.vercel.app ollama serve'}
                 </div>
                 <p className="text-xs text-gray-500 mt-3">
-                  💡 <span className="text-yellow-400/70">OLLAMA_ORIGINS=*</span> allows this website to connect to your local Ollama.
+                  💡 This allows only <span className="text-yellow-400/70">tasern-4.vercel.app</span> to connect to your Ollama.
                   Your data stays on your machine.
                 </p>
               </div>

@@ -321,10 +321,10 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
                     </li>
                     <li>
                       Start Ollama with web access enabled:
-                      <div className="mt-1 p-2 bg-gray-800 rounded font-mono text-green-400 select-all">
+                      <div className="mt-1 p-2 bg-gray-800 rounded font-mono text-green-400 select-all text-[10px]">
                         {typeof window !== 'undefined' && navigator.platform?.includes('Win')
-                          ? 'set OLLAMA_ORIGINS=* && ollama serve'
-                          : 'OLLAMA_ORIGINS=* ollama serve'}
+                          ? 'set OLLAMA_ORIGINS=https://tasern-4.vercel.app && ollama serve'
+                          : 'OLLAMA_ORIGINS=https://tasern-4.vercel.app ollama serve'}
                       </div>
                     </li>
                     <li>Refresh this page</li>

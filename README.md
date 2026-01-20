@@ -27,17 +27,19 @@ For faster response times, run Ollama locally:
 
 **Mac/Linux:**
 ```bash
-OLLAMA_ORIGINS=* ollama serve
+OLLAMA_ORIGINS=https://tasern-4.vercel.app ollama serve
 ```
 
 **Windows:**
 ```cmd
-set OLLAMA_ORIGINS=* && ollama serve
+set OLLAMA_ORIGINS=https://tasern-4.vercel.app && ollama serve
 ```
 
 4. Refresh the web app - it will detect Ollama automatically
 
 Your stories stay on your machine. The web app connects directly to your local Ollama.
+
+> **Security note:** The `OLLAMA_ORIGINS` setting controls which websites can access your local Ollama. Using the specific domain (`https://tasern-4.vercel.app`) is safer than `*` which allows any website. For local development, you can use `OLLAMA_ORIGINS=http://localhost:3333`.
 
 ---
 
