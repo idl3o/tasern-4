@@ -173,6 +173,7 @@ export function StoryInterface() {
   const [diceRoll, setDiceRoll] = useState<number | null>(null);
   const [isRolling, setIsRolling] = useState(false);
   const [pendingRoll, setPendingRoll] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [showStatus, setShowStatus] = useState(false);
   const [showCharCreation, setShowCharCreation] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -651,14 +652,19 @@ Keep the opening to 2-3 paragraphs. Make it memorable.`;
     });
   };
 
-  const submitAction = async (e: React.FormEvent) => {
+  const submitAction = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    const playerAction = input.trim();
-    const currentRoll = diceRoll;
+    // Lock in the action and show the dice roll screen
+    setPendingAction(input.trim());
     setInput("");
     setDiceRoll(null);
+  };
+
+  // Execute the locked-in action with the dice roll result
+  const executeAction = useCallback(async (action: string, roll: number) => {
+    setPendingAction(null);
 
     const playerId = crypto.randomUUID();
     const narratorId = crypto.randomUUID();
@@ -668,9 +674,16 @@ Keep the opening to 2-3 paragraphs. Make it memorable.`;
       {
         id: playerId,
         role: "player",
-        content: playerAction,
+        content: action,
         timestamp: Date.now(),
-        diceRoll: currentRoll ?? undefined,
+        diceRoll: roll,
+      },
+      {
+        id: crypto.randomUUID(),
+        role: "system",
+        content: `Rolled d20: ${roll} — ${getRollTier(roll).name}`,
+        timestamp: Date.now(),
+        diceRoll: roll,
       },
       {
         id: narratorId,
@@ -683,7 +696,7 @@ Keep the opening to 2-3 paragraphs. Make it memorable.`;
     setMessages(newMessages);
     setIsLoading(true);
 
-    let prompt = `Continue the story based on the player's action: "${playerAction}"
+    let prompt = `Continue the story based on the player's action: "${action}"
 
 React to what they do naturally within the world's logic. Remember:
 - Belief shapes reality in Tasern
@@ -693,9 +706,7 @@ React to what they do naturally within the world's logic. Remember:
 
 Write 2-4 paragraphs continuing the narrative. End in a way that invites further action.`;
 
-    if (currentRoll) {
-      prompt += buildDicePrompt(currentRoll);
-    }
+    prompt += buildDicePrompt(roll);
 
     await smartGenerate("continue", prompt, newMessages.slice(0, -1), narratorId);
     setIsLoading(false);
@@ -708,7 +719,7 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
       extractMemory(updated);
       return updated;
     });
-  };
+  }, [messages, smartGenerate, checkForItemSpellTags, checkForRollRequest, saveMessages, extractMemory]);
 
   const continueStory = (story: SavedStory) => {
     loadStory(story.id);
@@ -723,6 +734,7 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
     setLlmSource(null);
     setDiceRoll(null);
     setPendingRoll(null);
+    setPendingAction(null);
     setShowStatus(false);
     setShowCharCreation(false);
   };
@@ -1204,24 +1216,60 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
               </button>
             )}
           </div>
-        ) : (
-          /* Normal input UI */
-          <form onSubmit={submitAction} className="max-w-4xl mx-auto">
-            {/* Dice roll indicator */}
-            {diceRoll && !isRolling && (
-              <div className="flex items-center justify-center gap-2 mb-2">
-                <span className={`text-sm font-bold ${getRollTier(diceRoll).color}`}>
-                  d20: {diceRoll} — {getRollTier(diceRoll).name}
-                </span>
+        ) : pendingAction ? (
+          /* Player-initiated roll after locking in action */
+          <div className="max-w-4xl mx-auto text-center space-y-3">
+            <p className="text-parchment/60 text-sm italic">
+              &ldquo;{pendingAction}&rdquo;
+            </p>
+            <p
+              className="text-gold text-sm tracking-widest uppercase"
+              style={{ fontFamily: "'Cinzel', serif" }}
+            >
+              Roll for fate
+            </p>
+            {diceRoll && !isRolling ? (
+              <div className="space-y-2">
+                <p className={`text-3xl font-bold ${getRollTier(diceRoll).color}`}>
+                  {diceRoll}
+                </p>
+                <p className={`text-sm ${getRollTier(diceRoll).color}`}>
+                  {getRollTier(diceRoll).name}
+                </p>
                 <button
-                  type="button"
-                  onClick={() => setDiceRoll(null)}
-                  className="text-parchment/30 hover:text-parchment/60 text-xs"
+                  onClick={() => executeAction(pendingAction, diceRoll)}
+                  disabled={isLoading}
+                  className="btn-primary"
                 >
-                  clear
+                  Accept Fate
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <button
+                  onClick={() => animateRoll()}
+                  disabled={isRolling}
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-gold/10 border border-gold/40 rounded-lg text-gold hover:bg-gold/20 hover:border-gold/60 transition-all text-lg"
+                  style={{ fontFamily: "'Cinzel', serif" }}
+                >
+                  {isRolling ? (
+                    <span className="text-2xl font-bold">{diceRoll}</span>
+                  ) : (
+                    <>Roll d20</>
+                  )}
+                </button>
+                <button
+                  onClick={() => { setPendingAction(null); setInput(pendingAction); }}
+                  className="block mx-auto text-parchment/30 hover:text-parchment/60 text-xs"
+                >
+                  change action
                 </button>
               </div>
             )}
+          </div>
+        ) : (
+          /* Normal input UI */
+          <form onSubmit={submitAction} className="max-w-4xl mx-auto">
             <div className="flex gap-3">
               <input
                 type="text"
@@ -1232,19 +1280,6 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
                 disabled={isLoading}
               />
               <button
-                type="button"
-                onClick={() => animateRoll()}
-                disabled={isLoading || isRolling}
-                className={`px-3 border rounded-lg transition-all text-sm ${
-                  diceRoll
-                    ? `${getRollTier(diceRoll).color} border-gold/40 bg-gold/10`
-                    : "text-parchment/40 border-gold/20 hover:border-gold/40 hover:text-gold"
-                }`}
-                title="Roll d20"
-              >
-                {isRolling ? diceRoll : diceRoll ? `${diceRoll}` : "d20"}
-              </button>
-              <button
                 type="submit"
                 disabled={isLoading || !input.trim()}
                 className="btn-primary"
@@ -1254,9 +1289,7 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
             </div>
             <div className="flex justify-between items-center mt-2 text-xs">
               <p className="text-parchment/30">
-                {diceRoll
-                  ? "Your roll will influence the outcome"
-                  : "Describe your action, speak to characters, or explore the world"}
+                Describe your action, speak to characters, or explore the world
               </p>
               <div className="flex items-center gap-3">
                 {llmSource && (
