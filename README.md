@@ -141,4 +141,4 @@ MIT
 
 ---
 
-*Built for the Tasern Universe by James Macgee*
+*Built for the Tasern Universe by James Magee*

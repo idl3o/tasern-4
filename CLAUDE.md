@@ -1,6 +1,6 @@
 # Tasern 4 - AI-Driven Web3 Storytelling
 
-> An AI Dungeon-style experience set in James Macgee's Tasern Universe
+> An AI Dungeon-style experience set in James Magee's Tasern Universe
 
 ## Project Vision
 
@@ -88,21 +88,32 @@ Each faction currency could:
 
 ## AI Storytelling System
 
-### How It Works (conceptual)
+### How It Works
 
-1. **Context Loading**: World-context.md + relevant faction/location data
-2. **Player State**: Wallet holdings, character history, current location
-3. **Prompt Construction**: Situation + player action + world rules
-4. **Generation**: LLM produces narrative continuation
-5. **State Update**: Choices recorded, world state potentially modified
+1. **Character Creation**: Player picks name, origin, core belief, and faction affinity via click-through UI
+2. **Context Loading**: World-context.md + memory context + character details fed to AI
+3. **Prompt Construction**: Situation + player action + world rules + belief/faction context
+4. **Generation**: LLM produces narrative with inline tags for items, spells, and dice rolls
+5. **Tag Parsing**: `[ITEM_GAINED]`, `[SPELL_LEARNED]`, `[ROLL_REQUIRED]` etc. are parsed, stripped, and applied to game state
+6. **Memory Extraction**: Every 10 messages, AI summarizes story as structured JSON (character, location, events, NPCs, beliefs, inventory, spells)
+7. **Persistence**: Stories auto-save to localStorage, resumable across sessions
+
+### Tag Protocol
+
+The AI emits structured tags at the end of responses. The client parses and strips them:
+- `[ROLL_REQUIRED: reason]` — AI requests a d20 roll for dramatic moments
+- `[ITEM_GAINED: Name - description]` / `[ITEM_LOST: Name]`
+- `[SPELL_LEARNED: Name - description]` / `[SPELL_LOST: Name]`
+
+This pattern is extensible for future mechanics (e.g. `[FACTION_REP]`, `[QUEST_TRIGGER]`).
 
 ### Story Entry Points
 
-New players arrive through the cosmic drain:
-- Fell from a dying world
-- Spell gone wrong
-- Pursued by something that no longer exists
-- Simply lost until Tasern's gravity caught them
+New players arrive through the cosmic drain (chosen during character creation):
+- A dying world — reality collapsed around them
+- A spell gone wrong — magic tore them loose
+- Pursued by something — running from what no longer exists
+- Simply lost — wandered too far, Tasern caught them
 
 First question: *What do you believe?* — because in Tasern, that has consequences.
 
@@ -120,19 +131,31 @@ First question: *What do you believe?* — because in Tasern, that has consequen
 - React 18 + TypeScript
 - Tailwind CSS (fantasy theme)
 - Web3: RainbowKit, Wagmi (optional)
-- State: Zustand + Immer
+- State: Zustand (with persist middleware for localStorage)
 
 ### Key Files
 ```
-src-tauri/
-├── src/lib.rs           # Ollama management (check/start/pull)
-└── tauri.conf.json      # App configuration
-
 src/
-├── hooks/useTauri.ts    # Tauri API wrapper
-├── hooks/useLocalOllama.ts  # Browser-direct Ollama
-├── components/OllamaSetup.tsx  # Setup wizard
-└── components/StoryInterface.tsx  # Main game UI
+├── components/
+│   ├── StoryInterface.tsx      # Main game UI, AI generation, tag parsing, Journal panel
+│   ├── CharacterCreation.tsx   # 4-step click-through character creation
+│   ├── IntroSequence.tsx       # Narrative intro sequence
+│   ├── OllamaSetup.tsx         # Ollama setup wizard
+│   └── WebLLMSetup.tsx         # WebLLM download setup
+├── state/
+│   ├── storyStore.ts           # Story persistence, memory, inventory (Zustand + localStorage)
+│   └── webllmStore.ts          # WebLLM preferences
+├── hooks/
+│   ├── useWebLLM.ts            # Browser AI (WebLLM) with system prompt
+│   ├── useLocalOllama.ts       # Browser-direct Ollama
+│   └── useTauri.ts             # Tauri API wrapper
+└── app/
+    ├── page.tsx                # Root page, intro → story flow
+    └── globals.css             # Fantasy theme (gold, void, parchment)
+
+src-tauri/
+├── src/lib.rs                  # Ollama management (check/start/pull)
+└── tauri.conf.json             # App configuration
 ```
 
 ### Commands
@@ -159,7 +182,7 @@ npm run build        # Static export only
 ### For the World
 - **Grows organically** — Player stories can become canon
 - **Belief has weight** — Collective player beliefs might shift reality
-- **Honor the source** — James Macgee's vision remains core
+- **Honor the source** — James Magee's vision remains core
 
 ---
 
@@ -180,19 +203,25 @@ npm run build        # Static export only
 ## Current State
 
 **Completed**:
-- [x] World context document (cosmology, tone, themes)
-- [x] Faction documentation (all 8 with tensions)
-- [x] Geography documentation (continents, regions)
-- [x] Moon documentation (three moons, influences)
-- [x] Tauri desktop app wrapper
-- [x] Ollama integration (browser-direct + Tauri management)
-- [x] Story interface with streaming responses
-- [x] WebLLM fallback for offline play
+- [x] World context documents (cosmology, factions, geography, moons)
+- [x] Tauri desktop app wrapper + Ollama management
+- [x] Ollama integration (browser-direct + Tauri)
+- [x] WebLLM fallback for offline/browser-only play
 - [x] Intro sequence and setup wizard
-- [x] Wallet connection (optional)
+- [x] Wallet connection (optional, RainbowKit)
+- [x] Story interface with streaming AI responses
+- [x] Story persistence (save/load to localStorage, auto-save)
+- [x] AI memory extraction (periodic summarization of character, location, events, NPCs, beliefs)
+- [x] D20 dice roll system (player-initiated + AI-forced via `[ROLL_REQUIRED]`)
+- [x] Inventory & spells (AI tags items/spells inline, tracked in store, displayed in Journal)
+- [x] Journal panel (toggleable overlay: character info, inventory, spells, NPCs, story summary)
+- [x] Click-through character creation (name, origin, belief, faction affinity, starting gift)
+- [x] Faction-specific starting gifts (8 unique items/spells tied to faction choice)
 
 **Next**:
-- [ ] Story persistence (save/load)
-- [ ] Character creation prompts
-- [ ] Faction-aware storytelling
-- [ ] Multiplayer story threads
+- [ ] Faction-reactive NPCs (AI adjusts NPC behavior based on player's faction affinity)
+- [ ] Belief accumulation (repeated actions reinforce beliefs, unlock spells/shift reality)
+- [ ] Refactor StoryInterface into `useStoryEngine` hook (generation, post-gen hooks, memory extraction)
+- [ ] Multiplayer story threads (shared world state between players)
+- [ ] Character NFTs with evolving metadata
+- [ ] Player-contributed content and canonical lore governance
