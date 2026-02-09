@@ -6,12 +6,14 @@ import { StoryInterface } from "@/components/StoryInterface";
 import { IntroSequence } from "@/components/IntroSequence";
 import OllamaSetup from "@/components/OllamaSetup";
 import { useTauri } from "@/hooks/useTauri";
+import { useStoryStore } from "@/state/storyStore";
 
 export default function Home() {
   const [showIntro, setShowIntro] = useState(true);
   const [introComplete, setIntroComplete] = useState(false);
   const [ollamaReady, setOllamaReady] = useState(false);
   const { isInTauri, ollamaStatus } = useTauri();
+  const { activeStoryId, getActiveStory } = useStoryStore();
 
   const handleIntroComplete = () => {
     setShowIntro(false);
@@ -34,9 +36,16 @@ export default function Home() {
       {/* Header */}
       <header className="border-b border-gold/20 bg-void/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <h1 className="font-display text-xl text-gold tracking-wider" style={{ fontFamily: "'Cinzel', serif" }}>
-            TALES OF TASERN
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="font-display text-xl text-gold tracking-wider" style={{ fontFamily: "'Cinzel', serif" }}>
+              TALES OF TASERN
+            </h1>
+            {activeStoryId && (
+              <span className="text-parchment/30 text-sm truncate max-w-[200px]">
+                {getActiveStory()?.title}
+              </span>
+            )}
+          </div>
           <ConnectButton
             accountStatus="address"
             chainStatus="icon"

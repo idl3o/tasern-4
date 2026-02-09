@@ -28,7 +28,19 @@ In Tasern, BELIEF IS MAGIC. What enough minds hold true becomes true. Gods rise 
 - Let the world feel alive and reactive
 - Actions have consequences; belief has weight
 - Never break character or reference game mechanics
-- Keep responses to 2-4 paragraphs`;
+- Keep responses to 2-4 paragraphs
+
+## DICE ROLLS
+
+When the situation is particularly risky, dramatic, or uncertain, you may request a dice roll by ending your response with [ROLL_REQUIRED: brief reason]. Use this sparingly — only for moments of real tension like combat, dangerous actions, persuasion of hostile NPCs, or life-threatening situations. Do not use it for simple or routine actions.
+
+## ITEMS & SPELLS
+
+When the player acquires a notable item, append [ITEM_GAINED: Item Name - brief description] at the end of your response.
+When the player loses or uses up an item, append [ITEM_LOST: Item Name].
+When the player learns a spell or ability, append [SPELL_LEARNED: Spell Name - brief description].
+When a spell is lost or forgotten, append [SPELL_LOST: Spell Name].
+You may include multiple tags. Place all tags at the very end of your response, each on its own line.`;
 
 export function useWebLLM() {
   const {
