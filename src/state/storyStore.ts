@@ -22,6 +22,7 @@ export interface StoryMemory {
   keyEvents: string[];
   npcsEncountered: string[];
   beliefs: string[];
+  faction: string | null;
   summary: string;
   inventory: InventoryItem[];
   spells: InventoryItem[];
@@ -44,6 +45,7 @@ function emptyMemory(): StoryMemory {
     keyEvents: [],
     npcsEncountered: [],
     beliefs: [],
+    faction: null,
     summary: "",
     inventory: [],
     spells: [],

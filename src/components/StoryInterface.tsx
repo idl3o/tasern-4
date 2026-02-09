@@ -5,6 +5,7 @@ import { useAccount } from "wagmi";
 import { useWebLLM } from "@/hooks/useWebLLM";
 import { useLocalOllama } from "@/hooks/useLocalOllama";
 import { WebLLMSetup } from "./WebLLMSetup";
+import { CharacterCreation, type CharacterChoices } from "./CharacterCreation";
 import {
   useStoryStore,
   type StoryMessage,
@@ -34,6 +35,7 @@ Respond ONLY with valid JSON, no other text or markdown formatting.
   "keyEvents": ["brief summary of each major event, max 15"],
   "npcsEncountered": ["Name - one line description"],
   "beliefs": ["things the character believes or has expressed"],
+  "faction": "faction affinity if established, or null",
   "summary": "A 2-3 paragraph prose summary of the entire story so far, covering the key plot arc and current situation",
   "inventory": [{"name": "Item Name", "description": "brief description"}],
   "spells": [{"name": "Spell Name", "description": "brief description"}]
@@ -48,6 +50,7 @@ function buildMemoryContext(memory: StoryMemory): string {
   if (memory.characterName) parts.push(`Character: ${memory.characterName}`);
   if (memory.currentLocation) parts.push(`Location: ${memory.currentLocation}`);
   if (memory.beliefs.length > 0) parts.push(`Beliefs: ${memory.beliefs.join(", ")}`);
+  if (memory.faction) parts.push(`Faction: ${memory.faction}`);
   if (memory.npcsEncountered.length > 0) parts.push(`Known NPCs: ${memory.npcsEncountered.join(", ")}`);
   if (memory.inventory.length > 0) parts.push(`Inventory: ${memory.inventory.map((i) => i.name).join(", ")}`);
   if (memory.spells.length > 0) parts.push(`Known Spells: ${memory.spells.map((s) => s.name).join(", ")}`);
@@ -171,6 +174,7 @@ export function StoryInterface() {
   const [isRolling, setIsRolling] = useState(false);
   const [pendingRoll, setPendingRoll] = useState<string | null>(null);
   const [showStatus, setShowStatus] = useState(false);
+  const [showCharCreation, setShowCharCreation] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const extractingRef = useRef(false);
 
@@ -306,6 +310,7 @@ You may include multiple tags at the end of your response, each on its own line.
             keyEvents: Array.isArray(parsed.keyEvents) ? parsed.keyEvents.slice(0, 15) : [],
             npcsEncountered: Array.isArray(parsed.npcsEncountered) ? parsed.npcsEncountered : [],
             beliefs: Array.isArray(parsed.beliefs) ? parsed.beliefs : [],
+            faction: parsed.faction || null,
             summary: parsed.summary || "",
             inventory: Array.isArray(parsed.inventory) ? parsed.inventory : [],
             spells: Array.isArray(parsed.spells) ? parsed.spells : [],
@@ -314,7 +319,7 @@ You may include multiple tags at the end of your response, each on its own line.
           // Graceful degradation: store raw text as summary
           console.log("[Memory] JSON parse failed, storing raw summary");
           memory = {
-            ...(story.memory || { characterName: null, currentLocation: null, keyEvents: [], npcsEncountered: [], beliefs: [], inventory: [], spells: [] }),
+            ...(story.memory || { characterName: null, currentLocation: null, keyEvents: [], npcsEncountered: [], beliefs: [], faction: null, inventory: [], spells: [] }),
             summary: response.slice(0, 2000),
           };
         }
@@ -567,10 +572,60 @@ Write 2-4 paragraphs. End in a way that invites further action.`;
     });
   }, [animateRoll, smartGenerate, messages, checkForItemSpellTags, checkForRollRequest, saveMessages, extractMemory]);
 
-  const startStory = async () => {
-    createStory();
+  const startStory = () => {
+    setShowCharCreation(true);
+  };
+
+  const startStoryWithCharacter = async (choices: CharacterChoices) => {
+    setShowCharCreation(false);
+    const storyId = createStory();
+
+    // Seed initial memory from character creation
+    updateMemory({
+      characterName: choices.name || null,
+      currentLocation: null,
+      keyEvents: [],
+      npcsEncountered: [],
+      beliefs: [choices.belief],
+      faction: choices.faction,
+      summary: "",
+      inventory: [],
+      spells: [],
+    });
+
+    // Grant starting gift
+    if (choices.startingGift.type === "spell") {
+      addSpell(choices.startingGift.name, choices.startingGift.description);
+    } else {
+      addItem(choices.startingGift.name, choices.startingGift.description);
+    }
+
+    // Build custom start prompt
+    const charName = choices.name || "an unnamed traveler";
+    const customPrompt = `Begin an interactive story for a new arrival to Tasern.
+
+CHARACTER DETAILS:
+- Name: ${charName}
+- Origin: ${choices.origin}
+- Core Belief: "${choices.belief}"
+- Faction Affinity: ${choices.faction} — they carry a ${choices.startingGift.name} (${choices.startingGift.description})
+
+The character has just fallen through the cosmic drain — that space between dying worlds where Tasern's slow gravity catches the lost. They arrived because: ${choices.origin}.
+
+Describe their arrival with rich sensory detail. Reference their ${choices.startingGift.name} naturally — they find it on their person or nearby.
+Weave their belief ("${choices.belief}") into the scene — in Tasern, belief has weight and consequence.
+End with a situation that invites action — perhaps they see something, someone approaches, or they face an immediate choice.
+
+Do NOT ask them questions directly. Simply narrate their arrival and leave space for them to act.
+Keep the opening to 2-3 paragraphs. Make it memorable.`;
+
     setIsLoading(true);
     setHasStarted(true);
+
+    // Update title with character name
+    if (choices.name) {
+      updateTitle(`${choices.name}'s Tale`);
+    }
 
     const openingId = crypto.randomUUID();
     const initialMessages: StoryMessage[] = [
@@ -583,7 +638,7 @@ Write 2-4 paragraphs. End in a way that invites further action.`;
     ];
     setMessages(initialMessages);
 
-    await smartGenerate("start", START_PROMPT, [], openingId);
+    await smartGenerate("start", customPrompt, [], openingId);
     setIsLoading(false);
 
     // Auto-save and check for tags/rolls
@@ -669,6 +724,7 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
     setDiceRoll(null);
     setPendingRoll(null);
     setShowStatus(false);
+    setShowCharCreation(false);
   };
 
   const handleDeleteStory = (id: string) => {
@@ -699,6 +755,11 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
         />
       </div>
     );
+  }
+
+  // Show character creation flow
+  if (showCharCreation) {
+    return <CharacterCreation onComplete={startStoryWithCharacter} />;
   }
 
   // Determine if ANY AI is available
@@ -947,6 +1008,9 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
             <p className="text-parchment/50 text-xs">
               {activeStory?.memory?.currentLocation || "Location unknown"}
             </p>
+            {activeStory?.memory?.faction && (
+              <p className="text-gold/50 text-xs">{activeStory.memory.faction}</p>
+            )}
           </div>
 
           {/* Inventory */}
