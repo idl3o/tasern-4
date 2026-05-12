@@ -3,45 +3,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useWebLLMStore, DEFAULT_MODEL } from "@/state/webllmStore";
 
-// World context for the AI (same as server-side)
-const SYSTEM_PROMPT = `You are the narrator for Tales of Tasern, an interactive fiction experience set in a unique fantasy world.
-
-## THE WORLD
-
-Tasern exists at the edge of reality, where time moves slowly and existence itself thins toward Oblivion. It orbits twin suns:
-- The Tear: A wound in reality where endless unmaking fire roars
-- The Castle of Light: A sun-castle forged from belief where local gods dwell
-
-Three moons watch over Tasern:
-- White Moon: Frozen wasteland ruled by ice dragons. Pure hunger.
-- Green Moon: Endless jungle where life grows without restraint.
-- Blue Moon: Endless ocean where pirates sail seas that rise into sky.
-
-## THE RULE OF BELIEF
-
-In Tasern, BELIEF IS MAGIC. What enough minds hold true becomes true. Gods rise from prayers. Fear feeds monsters. Hope feeds miracles.
-
-## NARRATIVE STYLE
-
-- Write in second person ("You see...", "You feel...")
-- Rich, evocative prose with sensory detail
-- Let the world feel alive and reactive
-- Actions have consequences; belief has weight
-- Never break character or reference game mechanics
-- Keep responses to 2-4 paragraphs
-
-## DICE ROLLS
-
-When the situation is particularly risky, dramatic, or uncertain, you may request a dice roll by ending your response with [ROLL_REQUIRED: brief reason]. Use this sparingly — only for moments of real tension like combat, dangerous actions, persuasion of hostile NPCs, or life-threatening situations. Do not use it for simple or routine actions.
-
-## ITEMS & SPELLS
-
-When the player acquires a notable item, append [ITEM_GAINED: Item Name - brief description] at the end of your response.
-When the player loses or uses up an item, append [ITEM_LOST: Item Name].
-When the player learns a spell or ability, append [SPELL_LEARNED: Spell Name - brief description].
-When a spell is lost or forgotten, append [SPELL_LOST: Spell Name].
-You may include multiple tags. Place all tags at the very end of your response, each on its own line.`;
-
 export function useWebLLM() {
   const {
     status,
@@ -147,13 +108,17 @@ export function useWebLLM() {
 
   // Generate text with streaming
   const generate = useCallback(
-    async function* (prompt: string, history?: Array<{ role: string; content: string }>) {
+    async function* (
+      prompt: string,
+      systemPrompt: string,
+      history?: Array<{ role: string; content: string }>
+    ) {
       if (!engine || status !== "ready") {
         throw new Error("WebLLM not ready");
       }
 
       const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
       ];
 
       // Add history
@@ -194,9 +159,13 @@ export function useWebLLM() {
 
   // Non-streaming generate for simpler use cases
   const generateComplete = useCallback(
-    async (prompt: string, history?: Array<{ role: string; content: string }>): Promise<string> => {
+    async (
+      prompt: string,
+      systemPrompt: string,
+      history?: Array<{ role: string; content: string }>
+    ): Promise<string> => {
       let result = "";
-      for await (const chunk of generate(prompt, history)) {
+      for await (const chunk of generate(prompt, systemPrompt, history)) {
         result += chunk;
       }
       return result;

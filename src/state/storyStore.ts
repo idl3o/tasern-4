@@ -22,6 +22,7 @@ export interface StoryMemory {
   keyEvents: string[];
   npcsEncountered: string[];
   beliefs: string[];
+  beliefStrengths: Record<string, number>;
   faction: string | null;
   summary: string;
   inventory: InventoryItem[];
@@ -45,6 +46,7 @@ function emptyMemory(): StoryMemory {
     keyEvents: [],
     npcsEncountered: [],
     beliefs: [],
+    beliefStrengths: {},
     faction: null,
     summary: "",
     inventory: [],
@@ -62,6 +64,7 @@ export interface StoryStore {
   deleteStory: (id: string) => void;
   setActiveMessages: (messages: StoryMessage[]) => void;
   updateMemory: (memory: StoryMemory) => void;
+  reinforceBeliefs: (beliefs: string[]) => void;
   updateTitle: (title: string) => void;
   setMessageCountAtLastExtraction: (count: number) => void;
   clearActiveStory: () => void;
@@ -132,9 +135,33 @@ export const useStoryStore = create<StoryStore>()(
         set((state) => ({
           stories: state.stories.map((s) =>
             s.id === activeStoryId
-              ? { ...s, memory, updatedAt: Date.now() }
+              ? {
+                  ...s,
+                  memory: {
+                    ...memory,
+                    beliefStrengths: { ...(s.memory.beliefStrengths || {}), ...(memory.beliefStrengths || {}) },
+                  },
+                  updatedAt: Date.now(),
+                }
               : s
           ),
+        }));
+      },
+
+      reinforceBeliefs: (beliefs) => {
+        const { activeStoryId } = get();
+        if (!activeStoryId || beliefs.length === 0) return;
+        set((state) => ({
+          stories: state.stories.map((s) => {
+            if (s.id !== activeStoryId) return s;
+            const next = { ...(s.memory.beliefStrengths || {}) };
+            for (const belief of beliefs) {
+              const key = belief.trim();
+              if (!key) continue;
+              next[key] = (next[key] || 0) + 1;
+            }
+            return { ...s, memory: { ...s.memory, beliefStrengths: next } };
+          }),
         }));
       },
 
@@ -242,9 +269,24 @@ export const useStoryStore = create<StoryStore>()(
     }),
     {
       name: "tasern-stories",
+      version: 2,
       partialize: (state) => ({
         stories: state.stories,
       }),
+      migrate: (persistedState: unknown, version: number) => {
+        if (!persistedState || typeof persistedState !== "object") return persistedState;
+        const state = persistedState as { stories?: SavedStory[] };
+        if (version < 2 && Array.isArray(state.stories)) {
+          state.stories = state.stories.map((s) => ({
+            ...s,
+            memory: {
+              ...s.memory,
+              beliefStrengths: s.memory?.beliefStrengths || {},
+            },
+          }));
+        }
+        return state;
+      },
     }
   )
 );
