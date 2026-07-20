@@ -8,6 +8,9 @@ import OllamaSetup from "@/components/OllamaSetup";
 import { useTauri } from "@/hooks/useTauri";
 import { useStoryStore } from "@/state/storyStore";
 
+// Wallet UI is web-only; the desktop build has no wagmi provider mounted.
+const IS_TAURI = process.env.NEXT_PUBLIC_TAURI_BUILD === "true";
+
 export default function Home() {
   const [showIntro, setShowIntro] = useState(true);
   const [introComplete, setIntroComplete] = useState(false);
@@ -46,11 +49,13 @@ export default function Home() {
               </span>
             )}
           </div>
-          <ConnectButton
-            accountStatus="address"
-            chainStatus="icon"
-            showBalance={false}
-          />
+          {!IS_TAURI && (
+            <ConnectButton
+              accountStatus="address"
+              chainStatus="icon"
+              showBalance={false}
+            />
+          )}
         </div>
       </header>
 

@@ -10,6 +10,10 @@ import { useWebLLMStore } from "@/state/webllmStore";
 
 import "@rainbow-me/rainbowkit/styles.css";
 
+// The desktop (Tauri) build ships without the wallet stack, so no WalletConnect
+// relay / RPC connections are ever made and the CSP can stay tight.
+const IS_TAURI = process.env.NEXT_PUBLIC_TAURI_BUILD === "true";
+
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
 
@@ -19,6 +23,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     useStoryStore.persist.rehydrate();
     useWebLLMStore.persist.rehydrate();
   }, []);
+
+  if (IS_TAURI) {
+    return <>{children}</>;
+  }
 
   return (
     <WagmiProvider config={config}>
