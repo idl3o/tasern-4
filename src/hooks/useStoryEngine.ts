@@ -155,6 +155,9 @@ export function useStoryEngine() {
   const selectedApproachRef = useRef<Approach | null>(null);
   // Consecutive turns without a roll — drives the stochastic "fate stirs" backstop.
   const calmTurnsRef = useRef(0);
+  // True while resolving a turn where fate intruded: the world chose the test, so its
+  // AI-assigned approach wins over any approach the player clicked this turn.
+  const fateThisTurnRef = useRef(false);
 
   const {
     getActiveStory,
@@ -467,11 +470,12 @@ export function useStoryEngine() {
         if (roll.reason) {
           cleanedContent = roll.cleanContent;
           const story = getActiveStory();
-          // Approach: the player's clicked move wins; else the AI's inference; else dominant.
-          const approach =
-            selectedApproachRef.current ??
-            roll.approach ??
-            dominantApproach(story?.memory?.affinityStrengths);
+          // Approach precedence: a fate intrusion is the world's test, so its AI-assigned
+          // approach wins; otherwise the player's clicked move wins, then AI inference,
+          // then their dominant affinity.
+          const approach = fateThisTurnRef.current
+            ? roll.approach ?? selectedApproachRef.current ?? dominantApproach(story?.memory?.affinityStrengths)
+            : selectedApproachRef.current ?? roll.approach ?? dominantApproach(story?.memory?.affinityStrengths);
           const modifier = approach
             ? affinityModifier(story?.memory?.affinityStrengths?.[approach])
             : 0;
@@ -500,6 +504,7 @@ export function useStoryEngine() {
         // A free-text action with no roll never revealed an approach — nothing to keep.
         selectedApproachRef.current = null;
       }
+      fateThisTurnRef.current = false; // consumed for this turn
       extractMemory(cleaned);
     },
     [checkForItemSpellTags, saveMessages, extractMemory, getActiveStory]
@@ -651,9 +656,10 @@ Write 2-4 paragraphs continuing the narrative.`;
 
       // Stochastic backstop: after a calm stretch, let fate intrude so the dice/belief
       // layer resurfaces even when the AI has been narrating gently. The AI supplies the
-      // complication and the approach; only fires when the player didn't pick an approach
-      // that already implies stakes — i.e. we always allow it, the AI merges if needed.
-      if (fateStirs(calmTurnsRef.current)) {
+      // complication and the approach (which wins over any clicked approach this turn).
+      const fate = fateStirs(calmTurnsRef.current);
+      fateThisTurnRef.current = fate;
+      if (fate) {
         prompt += FATE_INTRUSION_PROMPT;
       }
 
@@ -783,6 +789,7 @@ Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
     characterRef.current = null;
     selectedApproachRef.current = null;
     calmTurnsRef.current = 0;
+    fateThisTurnRef.current = false;
   }, []);
 
   return {
