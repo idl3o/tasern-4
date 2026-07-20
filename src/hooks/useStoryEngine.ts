@@ -16,6 +16,7 @@ import {
   buildDicePrompt,
   MEMORY_EXTRACTION_PROMPT,
   MEMORY_EXTRACTION_SYSTEM,
+  FATE_INTRUSION_PROMPT,
   type CharacterContext,
 } from "@/lib/prompt";
 import type { CharacterChoices } from "@/components/CharacterCreation";
@@ -26,6 +27,7 @@ import {
   normalizeApproach,
   affinityModifier,
   formatRoll,
+  fateStirs,
   CREATION_AFFINITY_SEED,
   type Approach,
 } from "@/lib/rolls";
@@ -151,6 +153,8 @@ export function useStoryEngine() {
   // Approach of the in-flight action: set when the player clicks a labeled move,
   // null for a free-text action (whose approach the AI infers at roll time).
   const selectedApproachRef = useRef<Approach | null>(null);
+  // Consecutive turns without a roll — drives the stochastic "fate stirs" backstop.
+  const calmTurnsRef = useRef(0);
 
   const {
     getActiveStory,
@@ -487,8 +491,15 @@ export function useStoryEngine() {
       saveMessages(cleaned);
       setPendingRoll(pending);
       setChoices(moves);
-      // A free-text action with no roll never revealed an approach — nothing to keep.
-      if (!pending) selectedApproachRef.current = null;
+      // Track the calm streak for the fate backstop: a requested roll discharges the
+      // tension (reset to 0); a roll-free turn lengthens the streak.
+      if (pending) {
+        calmTurnsRef.current = 0;
+      } else {
+        calmTurnsRef.current += 1;
+        // A free-text action with no roll never revealed an approach — nothing to keep.
+        selectedApproachRef.current = null;
+      }
       extractMemory(cleaned);
     },
     [checkForItemSpellTags, saveMessages, extractMemory, getActiveStory]
@@ -502,6 +513,7 @@ export function useStoryEngine() {
       setChoices([]);
       setPendingRoll(null);
       selectedApproachRef.current = null;
+      calmTurnsRef.current = 0;
 
       // Persist character context for the prompt
       characterRef.current = {
@@ -584,6 +596,7 @@ Keep the opening to 2-3 paragraphs. Make it memorable.`;
       setChoices([]);
       setPendingRoll(null);
       selectedApproachRef.current = null;
+      calmTurnsRef.current = 0;
       // Restore character context from memory if possible
       if (story.memory) {
         characterRef.current = {
@@ -625,7 +638,7 @@ Keep the opening to 2-3 paragraphs. Make it memorable.`;
       setMessages(newMessages);
       setIsLoading(true);
 
-      const prompt = `Continue the story based on the player's action: "${action}"
+      let prompt = `Continue the story based on the player's action: "${action}"
 
 React to what they do naturally within the world's logic. Remember:
 - Belief shapes reality in Tasern
@@ -635,6 +648,14 @@ React to what they do naturally within the world's logic. Remember:
 
 If the outcome is genuinely uncertain or contested, request a roll per the protocol; otherwise narrate the result and offer suggested moves.
 Write 2-4 paragraphs continuing the narrative.`;
+
+      // Stochastic backstop: after a calm stretch, let fate intrude so the dice/belief
+      // layer resurfaces even when the AI has been narrating gently. The AI supplies the
+      // complication and the approach; only fires when the player didn't pick an approach
+      // that already implies stakes — i.e. we always allow it, the AI merges if needed.
+      if (fateStirs(calmTurnsRef.current)) {
+        prompt += FATE_INTRUSION_PROMPT;
+      }
 
       try {
         const content = await smartGenerate(prompt, priorHistory, narratorId);
@@ -706,6 +727,7 @@ Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
     setLlmSource(null);
     characterRef.current = null;
     selectedApproachRef.current = null;
+    calmTurnsRef.current = 0;
   }, []);
 
   return {
