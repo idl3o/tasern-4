@@ -35,7 +35,8 @@ export function StoryInterface() {
   const [showCharCreation, setShowCharCreation] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { stories, getActiveStory, deleteStory, clearActiveStory } = useStoryStore();
+  const { stories, getActiveStory, deleteStory, clearActiveStory, storageError, clearStorageError } =
+    useStoryStore();
 
   const {
     isReady: webLLMReady,
@@ -340,6 +341,14 @@ export function StoryInterface() {
   // Story interface
   return (
     <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full relative">
+      {storageError && (
+        <div className="mx-4 mt-2 flex items-center justify-between gap-3 rounded border border-red-400/40 bg-red-950/40 px-3 py-2 text-xs text-red-300">
+          <span>Saving failed — your browser storage may be full. Older stories can be deleted to free space.</span>
+          <button onClick={clearStorageError} className="shrink-0 text-red-300/60 hover:text-red-300">
+            dismiss
+          </button>
+        </div>
+      )}
       <div className="flex justify-end px-4 pt-2">
         <button
           onClick={() => setShowStatus(!showStatus)}

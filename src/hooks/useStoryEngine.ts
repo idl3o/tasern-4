@@ -19,6 +19,7 @@ import {
   type CharacterContext,
 } from "@/lib/prompt";
 import type { CharacterChoices } from "@/components/CharacterCreation";
+import { safeUUID } from "@/lib/id";
 
 const MEMORY_EXTRACTION_THRESHOLD = 10;
 
@@ -359,18 +360,18 @@ export function useStoryEngine() {
       const notifications: StoryMessage[] = [];
       for (const item of itemsGained) {
         notifications.push({
-          id: crypto.randomUUID(),
+          id: safeUUID(),
           role: "system",
           content: `+ ${item.name}${item.description ? ` — ${item.description}` : ""}`,
           timestamp: Date.now(),
         });
       }
       for (const name of itemsLost) {
-        notifications.push({ id: crypto.randomUUID(), role: "system", content: `- ${name}`, timestamp: Date.now() });
+        notifications.push({ id: safeUUID(), role: "system", content: `- ${name}`, timestamp: Date.now() });
       }
       for (const spell of spellsLearned) {
         notifications.push({
-          id: crypto.randomUUID(),
+          id: safeUUID(),
           role: "system",
           content: `✦ ${spell.name}${spell.description ? ` — ${spell.description}` : ""}`,
           timestamp: Date.now(),
@@ -378,7 +379,7 @@ export function useStoryEngine() {
       }
       for (const name of spellsLost) {
         notifications.push({
-          id: crypto.randomUUID(),
+          id: safeUUID(),
           role: "system",
           content: `✧ Lost: ${name}`,
           timestamp: Date.now(),
@@ -490,7 +491,7 @@ Keep the opening to 2-3 paragraphs. Make it memorable.`;
         updateTitle(`${choices.name}'s Tale`);
       }
 
-      const openingId = crypto.randomUUID();
+      const openingId = safeUUID();
       const initial: StoryMessage[] = [
         { id: openingId, role: "narrator", content: "", timestamp: Date.now() },
       ];
@@ -529,8 +530,8 @@ Keep the opening to 2-3 paragraphs. Make it memorable.`;
       if (isGeneratingRef.current) return;
       isGeneratingRef.current = true;
 
-      const playerId = crypto.randomUUID();
-      const narratorId = crypto.randomUUID();
+      const playerId = safeUUID();
+      const narratorId = safeUUID();
 
       // History for the LLM = the story so far, before this turn's action. The action
       // is restated in the prompt, so including it here too would duplicate it.
@@ -540,7 +541,7 @@ Keep the opening to 2-3 paragraphs. Make it memorable.`;
         ...messages,
         { id: playerId, role: "player", content: action, timestamp: Date.now(), diceRoll: roll },
         {
-          id: crypto.randomUUID(),
+          id: safeUUID(),
           role: "system",
           content: `Rolled d20: ${roll} — ${getRollTier(roll).name}`,
           timestamp: Date.now(),
@@ -581,10 +582,10 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
       isGeneratingRef.current = true;
       setPendingRoll(null);
 
-      const narratorId = crypto.randomUUID();
+      const narratorId = safeUUID();
       const tier = getRollTier(roll);
       const rollMsg: StoryMessage = {
-        id: crypto.randomUUID(),
+        id: safeUUID(),
         role: "system",
         content: `Rolled d20: ${roll} — ${tier.name}`,
         timestamp: Date.now(),
