@@ -6,6 +6,7 @@ export interface CharacterChoices {
   name: string;
   origin: string;
   belief: string;
+  approach: string; // the affinity of the chosen belief: Combat/Perception/Nature/Chaos
   faction: string;
   startingGift: { name: string; description: string; type: "item" | "spell" };
 }
@@ -42,24 +43,28 @@ const BELIEFS = [
     id: "strength",
     title: "Strength overcomes all",
     description: "Raw force, endurance, defiance of what would break you.",
+    approach: "Combat",
     affinity: "Combat: shielding, striking",
   },
   {
     id: "knowledge",
     title: "Knowledge is the true power",
     description: "Secrets, understanding, the patterns behind everything.",
+    approach: "Perception",
     affinity: "Perception: scrying, lore, detection",
   },
   {
     id: "nature",
     title: "The natural world provides",
     description: "Growth, balance, the living cycle that sustains all things.",
+    approach: "Nature",
     affinity: "Nature: healing, shaping, growth",
   },
   {
     id: "freedom",
     title: "Freedom cannot be taken",
     description: "Independence, movement, defiance of every cage and chain.",
+    approach: "Chaos",
     affinity: "Chaos: illusion, escape, mobility",
   },
 ];
@@ -157,6 +162,7 @@ export function CharacterCreation({ onComplete }: CharacterCreationProps) {
         name: name.trim() || "",
         origin: selectedOrigin.title,
         belief: selectedBelief.title,
+        approach: selectedBelief.approach,
         faction: selectedFaction.title,
         startingGift: selectedFaction.gift,
       });

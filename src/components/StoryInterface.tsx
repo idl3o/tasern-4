@@ -4,7 +4,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useWebLLM } from "@/hooks/useWebLLM";
 import { useLocalOllama } from "@/hooks/useLocalOllama";
 import { useWalletContext } from "@/hooks/useWalletContext";
-import { useStoryEngine, getRollTier, rollD20 } from "@/hooks/useStoryEngine";
+import { useStoryEngine, getRollTier, rollD20, type SuggestedMove } from "@/hooks/useStoryEngine";
+import { resolveRoll } from "@/lib/rolls";
 import { WebLLMSetup } from "./WebLLMSetup";
 import { CharacterCreation, type CharacterChoices } from "./CharacterCreation";
 import { useStoryStore, type SavedStory } from "@/state/storyStore";
@@ -30,7 +31,6 @@ export function StoryInterface() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [diceRoll, setDiceRoll] = useState<number | null>(null);
   const [isRolling, setIsRolling] = useState(false);
-  const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [showStatus, setShowStatus] = useState(false);
   const [showCharCreation, setShowCharCreation] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -55,6 +55,7 @@ export function StoryInterface() {
     messages,
     isLoading,
     pendingRoll,
+    choices,
     llmSource,
     startStory: startStoryEngine,
     continueStory: continueStoryEngine,
@@ -120,7 +121,6 @@ export function StoryInterface() {
     resetSession();
     setHasStarted(false);
     setDiceRoll(null);
-    setPendingAction(null);
     setShowStatus(false);
     setShowCharCreation(false);
   };
@@ -138,14 +138,22 @@ export function StoryInterface() {
   const submitAction = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
-    setPendingAction(input.trim());
+    const action = input.trim();
     setInput("");
     setDiceRoll(null);
+    sendAction(action, null); // free-text: approach inferred by the AI if a roll is needed
   };
 
-  const handlePendingRollClick = () => {
-    animateRoll(async (result) => {
-      await resolveAIRoll(result);
+  const handleChoiceClick = (move: SuggestedMove) => {
+    if (isLoading) return;
+    setDiceRoll(null);
+    sendAction(move.text, move.approach);
+  };
+
+  // Roll the d20 a [ROLL_REQUIRED] asked for, then resolve with the belief modifier.
+  const handleRoll = () => {
+    animateRoll((natural) => {
+      resolveAIRoll(natural);
     });
   };
 
@@ -493,10 +501,7 @@ export function StoryInterface() {
             {message.role === "system" && message.diceRoll && (
               <div className="inline-flex items-center gap-2 bg-void/60 border border-gold/30 rounded-full px-4 py-1.5">
                 <span className={`text-sm font-bold ${getRollTier(message.diceRoll).color}`}>
-                  d20: {message.diceRoll}
-                </span>
-                <span className={`text-xs ${getRollTier(message.diceRoll).color}`}>
-                  {getRollTier(message.diceRoll).name}
+                  {message.content}
                 </span>
               </div>
             )}
@@ -530,76 +535,59 @@ export function StoryInterface() {
       <div className="border-t border-gold/20 p-4 bg-void/80 backdrop-blur-sm">
         {pendingRoll ? (
           <div className="max-w-4xl mx-auto text-center space-y-3">
-            <p className="text-parchment/60 text-sm italic">{pendingRoll}</p>
+            <p className="text-parchment/60 text-sm italic">{pendingRoll.reason}</p>
             <p className="text-gold text-sm tracking-widest uppercase" style={{ fontFamily: "'Cinzel', serif" }}>
               The fates demand a roll
+              {pendingRoll.modifier > 0 && (
+                <span className="text-green-400 normal-case tracking-normal">
+                  {" "}· +{pendingRoll.modifier} {pendingRoll.approach}
+                </span>
+              )}
             </p>
-            {diceRoll && !isRolling ? (
-              <div className="space-y-2">
-                <p className={`text-3xl font-bold ${getRollTier(diceRoll).color}`}>{diceRoll}</p>
-                <p className={`text-sm ${getRollTier(diceRoll).color}`}>{getRollTier(diceRoll).name}</p>
-                <button onClick={handlePendingRollClick} disabled={isLoading} className="btn-primary">
-                  Accept Fate
-                </button>
-              </div>
+            {diceRoll !== null && !isRolling ? (
+              (() => {
+                const r = resolveRoll(diceRoll, pendingRoll.modifier, pendingRoll.approach);
+                return (
+                  <div className="space-y-1">
+                    <p className={`text-3xl font-bold ${r.tier.color}`}>
+                      {r.raw}
+                      {r.modifier > 0 && <span className="text-lg"> +{r.modifier} = {r.total}</span>}
+                    </p>
+                    <p className={`text-sm ${r.tier.color}`}>{r.tier.name}</p>
+                  </div>
+                );
+              })()
             ) : (
               <button
-                onClick={() => animateRoll()}
-                disabled={isRolling}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-gold/10 border border-gold/40 rounded-lg text-gold hover:bg-gold/20 hover:border-gold/60 transition-all text-lg"
+                onClick={handleRoll}
+                disabled={isRolling || isLoading}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-gold/10 border border-gold/40 rounded-lg text-gold hover:bg-gold/20 hover:border-gold/60 transition-all text-lg disabled:opacity-50"
                 style={{ fontFamily: "'Cinzel', serif" }}
               >
                 {isRolling ? <span className="text-2xl font-bold">{diceRoll}</span> : <>Roll d20</>}
               </button>
             )}
           </div>
-        ) : pendingAction ? (
-          <div className="max-w-4xl mx-auto text-center space-y-3">
-            <p className="text-parchment/60 text-sm italic">&ldquo;{pendingAction}&rdquo;</p>
-            <p className="text-gold text-sm tracking-widest uppercase" style={{ fontFamily: "'Cinzel', serif" }}>
-              Roll for fate
-            </p>
-            {diceRoll && !isRolling ? (
-              <div className="space-y-2">
-                <p className={`text-3xl font-bold ${getRollTier(diceRoll).color}`}>{diceRoll}</p>
-                <p className={`text-sm ${getRollTier(diceRoll).color}`}>{getRollTier(diceRoll).name}</p>
-                <button
-                  onClick={() => {
-                    const action = pendingAction;
-                    const roll = diceRoll;
-                    setPendingAction(null);
-                    sendAction(action, roll);
-                  }}
-                  disabled={isLoading}
-                  className="btn-primary"
-                >
-                  Accept Fate
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <button
-                  onClick={() => animateRoll()}
-                  disabled={isRolling}
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-gold/10 border border-gold/40 rounded-lg text-gold hover:bg-gold/20 hover:border-gold/60 transition-all text-lg"
-                  style={{ fontFamily: "'Cinzel', serif" }}
-                >
-                  {isRolling ? <span className="text-2xl font-bold">{diceRoll}</span> : <>Roll d20</>}
-                </button>
-                <button
-                  onClick={() => {
-                    setInput(pendingAction);
-                    setPendingAction(null);
-                  }}
-                  className="block mx-auto text-parchment/30 hover:text-parchment/60 text-xs"
-                >
-                  change action
-                </button>
-              </div>
-            )}
-          </div>
         ) : (
           <form onSubmit={submitAction} className="max-w-4xl mx-auto">
+            {choices.length > 0 && !isLoading && (
+              <div className="flex flex-col gap-2 mb-3">
+                {choices.map((move, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => handleChoiceClick(move)}
+                    disabled={isLoading}
+                    className="text-left px-4 py-2 rounded-lg border border-gold/20 bg-void/50 hover:border-gold/40 hover:bg-gold/5 transition-all text-sm text-parchment/80"
+                  >
+                    {move.text}
+                    {move.approach && (
+                      <span className="text-purple-400/60 text-xs ml-2">({move.approach})</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="flex gap-3">
               <input
                 type="text"
