@@ -16,6 +16,7 @@ const APPROACH_CHIPS: { approach: Approach; icon: string }[] = [
 ];
 import { WebLLMSetup } from "./WebLLMSetup";
 import { CharacterCreation, type CharacterChoices } from "./CharacterCreation";
+import { ChroniclePanel } from "./ChroniclePanel";
 import { useStoryStore, type SavedStory } from "@/state/storyStore";
 
 function formatTimeAgo(timestamp: number): string {
@@ -40,6 +41,7 @@ export function StoryInterface() {
   const [diceRoll, setDiceRoll] = useState<number | null>(null);
   const [isRolling, setIsRolling] = useState(false);
   const [showStatus, setShowStatus] = useState(false);
+  const [showChronicle, setShowChronicle] = useState(false);
   const [showCharCreation, setShowCharCreation] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const rollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -135,6 +137,7 @@ export function StoryInterface() {
     setDiceRoll(null);
     setAttempt(null);
     setShowStatus(false);
+    setShowChronicle(false);
     setShowCharCreation(false);
   };
 
@@ -393,9 +396,24 @@ export function StoryInterface() {
           </button>
         </div>
       )}
-      <div className="flex justify-end px-4 pt-2">
+      <div className="flex justify-end gap-2 px-4 pt-2">
         <button
-          onClick={() => setShowStatus(!showStatus)}
+          onClick={() => {
+            setShowChronicle((v) => !v);
+            setShowStatus(false);
+          }}
+          className={`text-xs tracking-widest uppercase px-3 py-1 border rounded transition-all ${
+            showChronicle ? "text-gold border-gold/40 bg-gold/10" : "text-parchment/40 border-gold/20 hover:text-gold hover:border-gold/40"
+          }`}
+          style={{ fontFamily: "'Cinzel', serif" }}
+        >
+          Chronicle
+        </button>
+        <button
+          onClick={() => {
+            setShowStatus((v) => !v);
+            setShowChronicle(false);
+          }}
           className={`text-xs tracking-widest uppercase px-3 py-1 border rounded transition-all ${
             showStatus ? "text-gold border-gold/40 bg-gold/10" : "text-parchment/40 border-gold/20 hover:text-gold hover:border-gold/40"
           }`}
@@ -405,6 +423,8 @@ export function StoryInterface() {
           {hasStatusContent && !showStatus && <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-gold" />}
         </button>
       </div>
+
+      {showChronicle && <ChroniclePanel onClose={() => setShowChronicle(false)} />}
 
       {showStatus && (
         <div className="absolute top-10 right-4 z-40 w-72 max-h-[70vh] overflow-y-auto bg-void/95 border border-gold/30 rounded-lg p-5 shadow-2xl animate-fade-in">

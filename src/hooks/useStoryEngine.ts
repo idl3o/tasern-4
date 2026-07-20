@@ -20,6 +20,8 @@ import {
   type CharacterContext,
 } from "@/lib/prompt";
 import type { CharacterChoices } from "@/components/CharacterCreation";
+import { useWorldStore } from "@/state/worldStore";
+import { runWorldDreamer, type DreamerGenerate } from "@/lib/world/dreamer";
 import { safeUUID } from "@/lib/id";
 import {
   rollD20,
@@ -188,6 +190,33 @@ export function useStoryEngine() {
 
   const { promptContext: walletPromptContext } = useWalletContext();
 
+  const worldTick = useWorldStore((s) => s.tick);
+  const applyDreamerEvents = useWorldStore((s) => s.applyDreamerEvents);
+
+  // One bounded LLM generation that narrates the world's tick into canon events.
+  // Fire-and-forget; skips entirely when no AI is available (rules already ticked).
+  const dreamWorld = useCallback(async () => {
+    const world = useWorldStore.getState().world;
+    if (!world) return;
+    let generate: DreamerGenerate | null = null;
+    if (webLLMReady) {
+      generate = (p, s) => webLLMGenerateComplete(p, s);
+    } else if (localOllamaAvailable) {
+      generate = async (p, s) => {
+        let r = "";
+        for await (const chunk of localOllamaGenerate(p, s)) r += chunk;
+        return r;
+      };
+    }
+    if (!generate) return;
+    try {
+      const events = await runWorldDreamer(world, generate);
+      if (events.length) applyDreamerEvents(events);
+    } catch (e) {
+      console.error("[WorldDreamer] failed:", e);
+    }
+  }, [webLLMReady, webLLMGenerateComplete, localOllamaAvailable, localOllamaGenerate, applyDreamerEvents]);
+
   // Build the system prompt fresh on every generate using latest store state
   const buildSystemPrompt = useCallback(() => {
     const story = getActiveStory();
@@ -195,6 +224,7 @@ export function useStoryEngine() {
       character: characterRef.current,
       memory: story?.memory ?? null,
       wallet: walletPromptContext,
+      world: useWorldStore.getState().world,
     });
   }, [getActiveStory, walletPromptContext]);
 
@@ -546,6 +576,9 @@ export function useStoryEngine() {
       const seedApproach = normalizeApproach(choices.approach);
       if (seedApproach) reinforceAffinity(seedApproach, CREATION_AFFINITY_SEED);
 
+      // Advance the living world for this new session, folding in the seeded belief.
+      worldTick(getActiveStory()?.memory?.affinityStrengths ?? {});
+
       if (choices.startingGift.type === "spell") {
         addSpell(choices.startingGift.name, choices.startingGift.description);
       } else {
@@ -591,7 +624,7 @@ Keep the opening to 2-3 paragraphs. Make it memorable.`;
         isGeneratingRef.current = false;
       }
     },
-    [createStory, updateMemory, reinforceBeliefs, reinforceAffinity, addSpell, addItem, updateTitle, smartGenerate, finalizeAfterGeneration]
+    [createStory, getActiveStory, updateMemory, reinforceBeliefs, reinforceAffinity, worldTick, addSpell, addItem, updateTitle, smartGenerate, finalizeAfterGeneration]
   );
 
   const continueStory = useCallback(
@@ -610,8 +643,13 @@ Keep the opening to 2-3 paragraphs. Make it memorable.`;
           belief: story.memory.beliefs[0] || null,
         };
       }
+      // Advance the living world for this session, folding in the player's beliefs.
+      worldTick(story.memory?.affinityStrengths ?? {});
+      // Let the world-dreamer narrate the tick (fire-and-forget; no story generation
+      // is in flight on continue, so it won't compete with the narrator).
+      void dreamWorld();
     },
-    [loadStory]
+    [loadStory, worldTick, dreamWorld]
   );
 
   // Take an action. `approach` is set when the player clicked a labeled move, null
