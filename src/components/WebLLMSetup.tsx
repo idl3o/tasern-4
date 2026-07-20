@@ -49,8 +49,8 @@ export function WebLLMSetup({ onReady, onSkip }: WebLLMSetupProps) {
       <div className="panel p-6 max-w-md mx-auto text-center space-y-4">
         <h3 className="text-gold">Browser AI Unavailable</h3>
         <p className="text-parchment/70 text-sm">
-          Your browser doesn't support WebGPU, which is needed for local AI.
-          We'll use server-based AI instead.
+          Your browser doesn&apos;t support WebGPU, which is needed for local AI.
+          We&apos;ll use server-based AI instead.
         </p>
         <button onClick={handleSkip} className="btn-primary">
           Continue with Server AI

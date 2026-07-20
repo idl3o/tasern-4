@@ -34,6 +34,7 @@ export function StoryInterface() {
   const [showStatus, setShowStatus] = useState(false);
   const [showCharCreation, setShowCharCreation] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const rollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { stories, getActiveStory, deleteStory, clearActiveStory, storageError, clearStorageError } =
     useStoryStore();
@@ -68,15 +69,17 @@ export function StoryInterface() {
 
   // Animated dice roll - cycles through random numbers then lands
   const animateRoll = useCallback((onComplete?: (result: number) => void) => {
+    if (rollIntervalRef.current) clearInterval(rollIntervalRef.current);
     setIsRolling(true);
     const finalResult = rollD20();
     let ticks = 0;
     const maxTicks = 10;
-    const interval = setInterval(() => {
+    rollIntervalRef.current = setInterval(() => {
       setDiceRoll(rollD20());
       ticks++;
       if (ticks >= maxTicks) {
-        clearInterval(interval);
+        if (rollIntervalRef.current) clearInterval(rollIntervalRef.current);
+        rollIntervalRef.current = null;
         setDiceRoll(finalResult);
         setIsRolling(false);
         onComplete?.(finalResult);
@@ -87,6 +90,13 @@ export function StoryInterface() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Clear any in-flight dice animation if the component unmounts
+  useEffect(() => {
+    return () => {
+      if (rollIntervalRef.current) clearInterval(rollIntervalRef.current);
+    };
+  }, []);
 
   const activeStory = getActiveStory();
 
