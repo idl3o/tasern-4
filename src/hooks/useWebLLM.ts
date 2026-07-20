@@ -80,7 +80,7 @@ export function useWebLLM() {
           const pct = Math.round(report.progress * 100);
           setProgress(pct, report.text);
 
-          if (report.progress === 1) {
+          if (report.progress >= 1) {
             setStatus("loading");
           }
         },

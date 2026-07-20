@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useWebLLM } from "@/hooks/useWebLLM";
 import { useLocalOllama } from "@/hooks/useLocalOllama";
 import { useWalletContext } from "@/hooks/useWalletContext";
-import { useStoryEngine, getRollTier } from "@/hooks/useStoryEngine";
+import { useStoryEngine, getRollTier, rollD20 } from "@/hooks/useStoryEngine";
 import { WebLLMSetup } from "./WebLLMSetup";
 import { CharacterCreation, type CharacterChoices } from "./CharacterCreation";
 import { useStoryStore, type SavedStory } from "@/state/storyStore";
@@ -19,10 +19,6 @@ function formatTimeAgo(timestamp: number): string {
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days}d ago`;
   return new Date(timestamp).toLocaleDateString();
-}
-
-function rollD20(): number {
-  return Math.floor(Math.random() * 20) + 1;
 }
 
 export function StoryInterface() {
