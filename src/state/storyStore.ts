@@ -68,6 +68,9 @@ export interface StoryMemory {
   npcsEncountered: string[];
   beliefs: string[];
   beliefStrengths: Record<string, number>;
+  // Strength the player holds each of the four approaches (Combat/Perception/
+  // Nature/Chaos), reinforced by acting in them. Drives the d20 modifier.
+  affinityStrengths: Record<string, number>;
   faction: string | null;
   summary: string;
   inventory: InventoryItem[];
@@ -99,6 +102,7 @@ function emptyMemory(): StoryMemory {
     npcsEncountered: [],
     beliefs: [],
     beliefStrengths: {},
+    affinityStrengths: {},
     faction: null,
     summary: "",
     inventory: [],
@@ -121,6 +125,7 @@ export interface StoryStore {
   setActiveMessages: (messages: StoryMessage[]) => void;
   updateMemory: (memory: StoryMemory) => void;
   reinforceBeliefs: (beliefs: string[]) => void;
+  reinforceAffinity: (affinity: string, amount?: number) => void;
   updateTitle: (title: string) => void;
   setMessageCountAtLastExtraction: (count: number) => void;
   clearActiveStory: () => void;
@@ -207,6 +212,12 @@ export const useStoryStore = create<StoryStore>()(
                       ...(s.memory.beliefStrengths || {}),
                       ...(memory.beliefStrengths || {}),
                     }),
+                    // Affinity strengths are managed by reinforceAffinity, never by
+                    // extraction — always keep the existing values.
+                    affinityStrengths: {
+                      ...(s.memory.affinityStrengths || {}),
+                      ...(memory.affinityStrengths || {}),
+                    },
                   },
                   updatedAt: Date.now(),
                 }
@@ -228,6 +239,20 @@ export const useStoryStore = create<StoryStore>()(
               next[key] = (next[key] || 0) + 1;
             }
             return { ...s, memory: { ...s.memory, beliefStrengths: next } };
+          }),
+        }));
+      },
+
+      reinforceAffinity: (affinity, amount = 1) => {
+        const { activeStoryId } = get();
+        const key = affinity.trim();
+        if (!activeStoryId || !key) return;
+        set((state) => ({
+          stories: state.stories.map((s) => {
+            if (s.id !== activeStoryId) return s;
+            const next = { ...(s.memory.affinityStrengths || {}) };
+            next[key] = (next[key] || 0) + amount;
+            return { ...s, memory: { ...s.memory, affinityStrengths: next } };
           }),
         }));
       },

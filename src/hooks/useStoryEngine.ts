@@ -20,34 +20,71 @@ import {
 } from "@/lib/prompt";
 import type { CharacterChoices } from "@/components/CharacterCreation";
 import { safeUUID } from "@/lib/id";
+import {
+  rollD20,
+  resolveRoll,
+  normalizeApproach,
+  affinityModifier,
+  formatRoll,
+  CREATION_AFFINITY_SEED,
+  type Approach,
+} from "@/lib/rolls";
+
+// Re-export so existing consumers keep importing these from the engine.
+export { rollD20, getRollTier } from "@/lib/rolls";
+export type { RollTier } from "@/lib/rolls";
 
 const MEMORY_EXTRACTION_THRESHOLD = 10;
 
-export function rollD20(): number {
-  return Math.floor(Math.random() * 20) + 1;
+export interface SuggestedMove {
+  text: string;
+  approach: Approach | null;
 }
 
-export interface RollTier {
-  name: string;
-  description: string;
-  color: string;
+export interface PendingRoll {
+  reason: string;
+  approach: Approach | null;
+  modifier: number;
 }
 
-export function getRollTier(roll: number): RollTier {
-  if (roll === 1) return { name: "Critical Failure", description: "Everything goes spectacularly wrong", color: "text-red-400" };
-  if (roll <= 7) return { name: "Failure", description: "The attempt fails, with consequences", color: "text-red-400/70" };
-  if (roll <= 14) return { name: "Partial Success", description: "Mixed results, complications arise", color: "text-gold" };
-  if (roll <= 19) return { name: "Success", description: "The action succeeds as intended", color: "text-green-400" };
-  return { name: "Critical Success", description: "Beyond expectations, extraordinary outcome", color: "text-green-300" };
-}
-
-function parseRollRequired(content: string): { cleanContent: string; reason: string | null } {
-  const match = content.match(/\[ROLL_REQUIRED:\s*(.+?)\]/);
+function parseRollRequired(content: string): {
+  cleanContent: string;
+  reason: string | null;
+  approach: Approach | null;
+} {
+  const match = content.match(/\[ROLL_REQUIRED:\s*([^\]|]+?)(?:\s*\|\s*approach:\s*([^\]]+?))?\s*\]/i);
   if (match) {
-    const cleanContent = content.replace(/\[ROLL_REQUIRED:\s*.+?\]/g, "").trimEnd();
-    return { cleanContent, reason: match[1].trim() };
+    const cleanContent = content.replace(/\[ROLL_REQUIRED:[^\]]*\]/gi, "").trimEnd();
+    return { cleanContent, reason: match[1].trim(), approach: normalizeApproach(match[2]) };
   }
-  return { cleanContent: content, reason: null };
+  return { cleanContent: content, reason: null, approach: null };
+}
+
+// Parses [CHOICE: text | approach:combat] suggested moves, tolerating a missing approach.
+function parseChoices(content: string): { cleanContent: string; choices: SuggestedMove[] } {
+  const choices: SuggestedMove[] = [];
+  const cleanContent = content
+    .replace(/\[CHOICE:\s*([^\]|]+?)(?:\s*\|\s*approach:\s*([^\]]+?))?\s*\]/gi, (_, text, approach) => {
+      const t = String(text).trim();
+      if (t) choices.push({ text: t, approach: normalizeApproach(approach) });
+      return "";
+    })
+    .trimEnd();
+  return { cleanContent, choices };
+}
+
+function dominantApproach(affinityStrengths: Record<string, number> | undefined): Approach | null {
+  if (!affinityStrengths) return null;
+  let best: Approach | null = null;
+  let bestVal = 0;
+  for (const [k, v] of Object.entries(affinityStrengths)) {
+    const a = normalizeApproach(k);
+    if (a && v > bestVal) {
+      best = a;
+      bestVal = v;
+    }
+  }
+  return best;
 }
 
 function parseItemSpellTags(content: string): {
@@ -105,11 +142,15 @@ function serializeMessagesForExtraction(messages: StoryMessage[]): string {
 export function useStoryEngine() {
   const [messages, setMessages] = useState<StoryMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [pendingRoll, setPendingRoll] = useState<string | null>(null);
+  const [pendingRoll, setPendingRoll] = useState<PendingRoll | null>(null);
+  const [choices, setChoices] = useState<SuggestedMove[]>([]);
   const [llmSource, setLlmSource] = useState<"local-ollama" | "webllm" | null>(null);
   const characterRef = useRef<CharacterContext | null>(null);
   const extractingRef = useRef(false);
   const isGeneratingRef = useRef(false);
+  // Approach of the in-flight action: set when the player clicks a labeled move,
+  // null for a free-text action (whose approach the AI infers at roll time).
+  const selectedApproachRef = useRef<Approach | null>(null);
 
   const {
     getActiveStory,
@@ -118,6 +159,7 @@ export function useStoryEngine() {
     setActiveMessages,
     updateMemory,
     reinforceBeliefs,
+    reinforceAffinity,
     updateTitle,
     setMessageCountAtLastExtraction,
     addItem,
@@ -278,6 +320,7 @@ export function useStoryEngine() {
             npcsEncountered: Array.isArray(parsed.npcsEncountered) ? parsed.npcsEncountered.slice(0, 20) : [],
             beliefs: Array.isArray(parsed.beliefs) ? parsed.beliefs.slice(0, 20) : [],
             beliefStrengths: story.memory?.beliefStrengths || {},
+            affinityStrengths: story.memory?.affinityStrengths || {},
             faction: parsed.faction || null,
             summary: parsed.summary || "",
             // Inventory & spells are authoritatively tracked via [ITEM_GAINED]/[SPELL_LEARNED]
@@ -295,6 +338,7 @@ export function useStoryEngine() {
               npcsEncountered: [],
               beliefs: [],
               beliefStrengths: {},
+              affinityStrengths: {},
               faction: null,
               inventory: [],
               spells: [],
@@ -393,23 +437,6 @@ export function useStoryEngine() {
     [addItem, removeItem, addSpell, removeSpell]
   );
 
-  // Pure: strips a [ROLL_REQUIRED] tag from the last narrator message and reports the reason.
-  const checkForRollRequest = useCallback(
-    (msgs: StoryMessage[]): { messages: StoryMessage[]; reason: string | null } => {
-      const lastNarrator = [...msgs].reverse().find((m) => m.role === "narrator");
-      if (!lastNarrator || !lastNarrator.content) return { messages: msgs, reason: null };
-
-      const { cleanContent, reason } = parseRollRequired(lastNarrator.content);
-      if (!reason) return { messages: msgs, reason: null };
-
-      const updated = msgs.map((msg) =>
-        msg.id === lastNarrator.id ? { ...msg, content: cleanContent } : msg
-      );
-      return { messages: updated, reason };
-    },
-    []
-  );
-
   const saveMessages = useCallback(
     (msgs: StoryMessage[]) => {
       const story = getActiveStory();
@@ -424,13 +451,47 @@ export function useStoryEngine() {
   const finalizeAfterGeneration = useCallback(
     (finalMessages: StoryMessage[]) => {
       const withItems = checkForItemSpellTags(finalMessages);
-      const { messages: cleaned, reason } = checkForRollRequest(withItems);
+
+      const lastNarrator = [...withItems].reverse().find((m) => m.role === "narrator");
+      let cleanedContent = lastNarrator?.content ?? "";
+      let pending: PendingRoll | null = null;
+      let moves: SuggestedMove[] = [];
+
+      if (lastNarrator?.content) {
+        // A roll request and suggested moves are mutually exclusive per the protocol.
+        const roll = parseRollRequired(lastNarrator.content);
+        if (roll.reason) {
+          cleanedContent = roll.cleanContent;
+          const story = getActiveStory();
+          // Approach: the player's clicked move wins; else the AI's inference; else dominant.
+          const approach =
+            selectedApproachRef.current ??
+            roll.approach ??
+            dominantApproach(story?.memory?.affinityStrengths);
+          const modifier = approach
+            ? affinityModifier(story?.memory?.affinityStrengths?.[approach])
+            : 0;
+          pending = { reason: roll.reason, approach, modifier };
+        } else {
+          const parsed = parseChoices(lastNarrator.content);
+          cleanedContent = parsed.cleanContent;
+          moves = parsed.choices;
+        }
+      }
+
+      const cleaned = lastNarrator
+        ? withItems.map((m) => (m.id === lastNarrator.id ? { ...m, content: cleanedContent } : m))
+        : withItems;
+
       setMessages(cleaned);
       saveMessages(cleaned);
-      if (reason) setPendingRoll(reason);
+      setPendingRoll(pending);
+      setChoices(moves);
+      // A free-text action with no roll never revealed an approach — nothing to keep.
+      if (!pending) selectedApproachRef.current = null;
       extractMemory(cleaned);
     },
-    [checkForItemSpellTags, checkForRollRequest, saveMessages, extractMemory]
+    [checkForItemSpellTags, saveMessages, extractMemory, getActiveStory]
   );
 
   const startStory = useCallback(
@@ -438,6 +499,9 @@ export function useStoryEngine() {
       if (isGeneratingRef.current) return;
       isGeneratingRef.current = true;
       createStory();
+      setChoices([]);
+      setPendingRoll(null);
+      selectedApproachRef.current = null;
 
       // Persist character context for the prompt
       characterRef.current = {
@@ -454,12 +518,16 @@ export function useStoryEngine() {
         npcsEncountered: [],
         beliefs: [choices.belief],
         beliefStrengths: {},
+        affinityStrengths: {},
         faction: choices.faction,
         summary: "",
         inventory: [],
         spells: [],
       });
       reinforceBeliefs([choices.belief]);
+      // Seed the chosen belief's approach so it starts with an edge (=> +1).
+      const seedApproach = normalizeApproach(choices.approach);
+      if (seedApproach) reinforceAffinity(seedApproach, CREATION_AFFINITY_SEED);
 
       if (choices.startingGift.type === "spell") {
         addSpell(choices.startingGift.name, choices.startingGift.description);
@@ -506,13 +574,16 @@ Keep the opening to 2-3 paragraphs. Make it memorable.`;
         isGeneratingRef.current = false;
       }
     },
-    [createStory, updateMemory, reinforceBeliefs, addSpell, addItem, updateTitle, smartGenerate, finalizeAfterGeneration]
+    [createStory, updateMemory, reinforceBeliefs, reinforceAffinity, addSpell, addItem, updateTitle, smartGenerate, finalizeAfterGeneration]
   );
 
   const continueStory = useCallback(
     (story: SavedStory) => {
       loadStory(story.id);
       setMessages(story.messages);
+      setChoices([]);
+      setPendingRoll(null);
+      selectedApproachRef.current = null;
       // Restore character context from memory if possible
       if (story.memory) {
         characterRef.current = {
@@ -525,11 +596,19 @@ Keep the opening to 2-3 paragraphs. Make it memorable.`;
     [loadStory]
   );
 
+  // Take an action. `approach` is set when the player clicked a labeled move, null
+  // for free-text (the AI infers it if a roll turns out to be needed). No dice are
+  // rolled here — a roll only happens if the AI responds with [ROLL_REQUIRED].
   const sendAction = useCallback(
-    async (action: string, roll: number) => {
+    async (action: string, approach: Approach | null) => {
       if (isGeneratingRef.current) return;
       isGeneratingRef.current = true;
 
+      // Committing to a labeled approach reinforces that affinity (belief accumulation).
+      selectedApproachRef.current = approach;
+      if (approach) reinforceAffinity(approach);
+
+      setChoices([]);
       const playerId = safeUUID();
       const narratorId = safeUUID();
 
@@ -539,21 +618,14 @@ Keep the opening to 2-3 paragraphs. Make it memorable.`;
 
       const newMessages: StoryMessage[] = [
         ...messages,
-        { id: playerId, role: "player", content: action, timestamp: Date.now(), diceRoll: roll },
-        {
-          id: safeUUID(),
-          role: "system",
-          content: `Rolled d20: ${roll} — ${getRollTier(roll).name}`,
-          timestamp: Date.now(),
-          diceRoll: roll,
-        },
+        { id: playerId, role: "player", content: action, timestamp: Date.now() },
         { id: narratorId, role: "narrator", content: "", timestamp: Date.now() },
       ];
 
       setMessages(newMessages);
       setIsLoading(true);
 
-      let prompt = `Continue the story based on the player's action: "${action}"
+      const prompt = `Continue the story based on the player's action: "${action}"
 
 React to what they do naturally within the world's logic. Remember:
 - Belief shapes reality in Tasern
@@ -561,8 +633,8 @@ React to what they do naturally within the world's logic. Remember:
 - The world is alive and reactive
 - Consequences flow from actions
 
-Write 2-4 paragraphs continuing the narrative. End in a way that invites further action.`;
-      prompt += buildDicePrompt(roll);
+If the outcome is genuinely uncertain or contested, request a roll per the protocol; otherwise narrate the result and offer suggested moves.
+Write 2-4 paragraphs continuing the narrative.`;
 
       try {
         const content = await smartGenerate(prompt, priorHistory, narratorId);
@@ -573,23 +645,33 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
         isGeneratingRef.current = false;
       }
     },
-    [messages, smartGenerate, finalizeAfterGeneration]
+    [messages, reinforceAffinity, smartGenerate, finalizeAfterGeneration]
   );
 
+  // Called after the player rolls the d20 that a [ROLL_REQUIRED] asked for.
   const resolveAIRoll = useCallback(
-    async (roll: number) => {
+    async (rawRoll: number) => {
       if (isGeneratingRef.current) return;
       isGeneratingRef.current = true;
+
+      const pending = pendingRoll;
+      const approach = pending?.approach ?? null;
+      const modifier = pending?.modifier ?? 0;
+      const result = resolveRoll(rawRoll, modifier, approach);
+
+      // Free-text actions only reveal their approach now (via the AI), so reinforce
+      // here. Clicked-move approaches were already reinforced at sendAction time.
+      if (selectedApproachRef.current === null && approach) reinforceAffinity(approach);
+      selectedApproachRef.current = null;
       setPendingRoll(null);
 
       const narratorId = safeUUID();
-      const tier = getRollTier(roll);
       const rollMsg: StoryMessage = {
         id: safeUUID(),
         role: "system",
-        content: `Rolled d20: ${roll} — ${tier.name}`,
+        content: formatRoll(result),
         timestamp: Date.now(),
-        diceRoll: roll,
+        diceRoll: result.total,
       };
 
       const priorHistory = messages;
@@ -601,10 +683,8 @@ Write 2-4 paragraphs continuing the narrative. End in a way that invites further
       setMessages(newMessages);
       setIsLoading(true);
 
-      const prompt = `[DICE ROLL: ${roll}/20 — ${tier.name}]
-The fate roll has been cast. The result is ${roll} — ${tier.description}.
-Continue the story based on this roll result. Do not mention dice or game mechanics — weave the outcome naturally into the narrative.
-Write 2-4 paragraphs. End in a way that invites further action.`;
+      const prompt = `The fate roll has been cast.${buildDicePrompt(result)}
+Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
 
       try {
         const content = await smartGenerate(prompt, priorHistory, narratorId);
@@ -615,21 +695,24 @@ Write 2-4 paragraphs. End in a way that invites further action.`;
         isGeneratingRef.current = false;
       }
     },
-    [messages, smartGenerate, finalizeAfterGeneration]
+    [messages, pendingRoll, reinforceAffinity, smartGenerate, finalizeAfterGeneration]
   );
 
   const resetSession = useCallback(() => {
     setMessages([]);
     setIsLoading(false);
     setPendingRoll(null);
+    setChoices([]);
     setLlmSource(null);
     characterRef.current = null;
+    selectedApproachRef.current = null;
   }, []);
 
   return {
     messages,
     isLoading,
     pendingRoll,
+    choices,
     llmSource,
     startStory,
     continueStory,

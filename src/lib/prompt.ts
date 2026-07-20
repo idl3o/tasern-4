@@ -6,6 +6,7 @@ import {
   getRegionLoreForLocation,
 } from "./lore";
 import type { StoryMemory } from "@/state/storyStore";
+import type { RollResult } from "./rolls";
 
 const TAG_PROTOCOL = `## NARRATIVE STYLE
 - Write in second person ("You see...", "You feel...")
@@ -16,7 +17,15 @@ const TAG_PROTOCOL = `## NARRATIVE STYLE
 - Keep responses to 2-4 paragraphs
 
 ## DICE ROLLS
-When the situation is particularly risky, dramatic, or uncertain, you may request a dice roll by ending your response with [ROLL_REQUIRED: brief reason]. Use this sparingly — only for moments of real tension like combat, dangerous actions, persuasion of hostile NPCs, or life-threatening situations. Do not use it for simple or routine actions.
+Only call for a roll when the outcome is genuinely uncertain or contested — combat, dangerous feats, persuading a hostile NPC, life-or-death moments. For routine or low-stakes actions, simply narrate the result; do NOT roll.
+When a roll IS warranted, narrate up to the decisive moment (do not decide the outcome yourself) and end your response with:
+[ROLL_REQUIRED: brief reason | approach:combat]
+The approach must be one of: combat, perception, nature, chaos — whichever best fits HOW the character is acting (combat = force/might, perception = insight/knowledge, nature = growth/healing, chaos = trickery/mobility). When you request a roll, do NOT also list choices.
+
+## SUGGESTED MOVES
+When you are NOT requesting a roll, end your response with 2-4 suggested next moves, each on its own line:
+[CHOICE: short action the player could take | approach:perception]
+Offer a variety of approaches when it fits the scene. These are only suggestions — the player may type their own action instead.
 
 ## ITEMS & SPELLS
 When the player acquires a notable item, append [ITEM_GAINED: Item Name - brief description] at the end of your response.
@@ -146,22 +155,9 @@ Here is the story:
 
 export const MEMORY_EXTRACTION_SYSTEM = "You are a story analyst. Extract facts from the story as JSON. Respond ONLY with valid JSON.";
 
-interface RollTier {
-  name: string;
-  description: string;
-}
-
-function getRollTier(roll: number): RollTier {
-  if (roll === 1) return { name: "Critical Failure", description: "Everything goes spectacularly wrong" };
-  if (roll <= 7) return { name: "Failure", description: "The attempt fails, with consequences" };
-  if (roll <= 14) return { name: "Partial Success", description: "Mixed results, complications arise" };
-  if (roll <= 19) return { name: "Success", description: "The action succeeds as intended" };
-  return { name: "Critical Success", description: "Beyond expectations, extraordinary outcome" };
-}
-
-export function buildDicePrompt(roll: number): string {
-  const tier = getRollTier(roll);
-  return `\n\n[DICE ROLL: ${roll}/20 — ${tier.name}]
-The player rolled a d20 and got ${roll}. This is a ${tier.description}.
+export function buildDicePrompt(result: RollResult): string {
+  const approachNote = result.approach ? ` acting through ${result.approach}` : "";
+  return `\n\n[DICE ROLL: ${result.total} — ${result.tier.name}]
+The player rolled a d20${approachNote} and the result is a ${result.tier.name.toLowerCase()} (${result.tier.description}).
 Narrate the outcome of their action with this result in mind. Do not mention dice or game mechanics explicitly — weave the success or failure naturally into the narrative.`;
 }
