@@ -155,6 +155,9 @@ export function useStoryEngine() {
   const selectedApproachRef = useRef<Approach | null>(null);
   // Consecutive turns without a roll — drives the stochastic "fate stirs" backstop.
   const calmTurnsRef = useRef(0);
+  // True while resolving a turn where fate intruded: the world chose the test, so its
+  // AI-assigned approach wins over any approach the player clicked this turn.
+  const fateThisTurnRef = useRef(false);
 
   const {
     getActiveStory,
@@ -467,11 +470,12 @@ export function useStoryEngine() {
         if (roll.reason) {
           cleanedContent = roll.cleanContent;
           const story = getActiveStory();
-          // Approach: the player's clicked move wins; else the AI's inference; else dominant.
-          const approach =
-            selectedApproachRef.current ??
-            roll.approach ??
-            dominantApproach(story?.memory?.affinityStrengths);
+          // Approach precedence: a fate intrusion is the world's test, so its AI-assigned
+          // approach wins; otherwise the player's clicked move wins, then AI inference,
+          // then their dominant affinity.
+          const approach = fateThisTurnRef.current
+            ? roll.approach ?? selectedApproachRef.current ?? dominantApproach(story?.memory?.affinityStrengths)
+            : selectedApproachRef.current ?? roll.approach ?? dominantApproach(story?.memory?.affinityStrengths);
           const modifier = approach
             ? affinityModifier(story?.memory?.affinityStrengths?.[approach])
             : 0;
@@ -500,6 +504,7 @@ export function useStoryEngine() {
         // A free-text action with no roll never revealed an approach — nothing to keep.
         selectedApproachRef.current = null;
       }
+      fateThisTurnRef.current = false; // consumed for this turn
       extractMemory(cleaned);
     },
     [checkForItemSpellTags, saveMessages, extractMemory, getActiveStory]
@@ -651,9 +656,10 @@ Write 2-4 paragraphs continuing the narrative.`;
 
       // Stochastic backstop: after a calm stretch, let fate intrude so the dice/belief
       // layer resurfaces even when the AI has been narrating gently. The AI supplies the
-      // complication and the approach; only fires when the player didn't pick an approach
-      // that already implies stakes — i.e. we always allow it, the AI merges if needed.
-      if (fateStirs(calmTurnsRef.current)) {
+      // complication and the approach (which wins over any clicked approach this turn).
+      const fate = fateStirs(calmTurnsRef.current);
+      fateThisTurnRef.current = fate;
+      if (fate) {
         prompt += FATE_INTRUSION_PROMPT;
       }
 
@@ -719,6 +725,61 @@ Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
     [messages, pendingRoll, reinforceAffinity, smartGenerate, finalizeAfterGeneration]
   );
 
+  // Player-initiated ("declare an attempt"): the player commits an action + approach
+  // and has ALREADY rolled the d20 (rawRoll from the UI animation). Roll-first — we
+  // resolve with the belief modifier, then the AI narrates the outcome at that tier.
+  const attemptAction = useCallback(
+    async (action: string, approach: Approach, rawRoll: number) => {
+      if (isGeneratingRef.current) return;
+      isGeneratingRef.current = true;
+
+      // Committing to an approach reinforces it (belief accumulation); the modifier is
+      // then read from the updated strength, so a deliberate attempt counts toward itself.
+      reinforceAffinity(approach);
+      const story = getActiveStory();
+      const modifier = affinityModifier(story?.memory?.affinityStrengths?.[approach]);
+      const result = resolveRoll(rawRoll, modifier, approach);
+
+      selectedApproachRef.current = null;
+      calmTurnsRef.current = 0; // a roll happened — reset the fate backstop streak
+      setChoices([]);
+      setPendingRoll(null);
+
+      const playerId = safeUUID();
+      const narratorId = safeUUID();
+      const rollMsg: StoryMessage = {
+        id: safeUUID(),
+        role: "system",
+        content: formatRoll(result),
+        timestamp: Date.now(),
+        diceRoll: result.total,
+      };
+
+      const priorHistory = messages;
+      const newMessages: StoryMessage[] = [
+        ...messages,
+        { id: playerId, role: "player", content: action, timestamp: Date.now() },
+        rollMsg,
+        { id: narratorId, role: "narrator", content: "", timestamp: Date.now() },
+      ];
+      setMessages(newMessages);
+      setIsLoading(true);
+
+      const prompt = `The traveler deliberately attempts: "${action}", meeting the moment through ${approach}.${buildDicePrompt(result)}
+Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
+
+      try {
+        const content = await smartGenerate(prompt, priorHistory, narratorId);
+        const finalMessages = newMessages.map((m) => (m.id === narratorId ? { ...m, content } : m));
+        finalizeAfterGeneration(finalMessages);
+      } finally {
+        setIsLoading(false);
+        isGeneratingRef.current = false;
+      }
+    },
+    [messages, reinforceAffinity, getActiveStory, smartGenerate, finalizeAfterGeneration]
+  );
+
   const resetSession = useCallback(() => {
     setMessages([]);
     setIsLoading(false);
@@ -728,6 +789,7 @@ Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
     characterRef.current = null;
     selectedApproachRef.current = null;
     calmTurnsRef.current = 0;
+    fateThisTurnRef.current = false;
   }, []);
 
   return {
@@ -739,6 +801,7 @@ Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
     startStory,
     continueStory,
     sendAction,
+    attemptAction,
     resolveAIRoll,
     resetSession,
     rollD20,
