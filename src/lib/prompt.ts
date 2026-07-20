@@ -7,6 +7,8 @@ import {
 } from "./lore";
 import type { StoryMemory } from "@/state/storyStore";
 import type { RollResult } from "./rolls";
+import type { WorldState } from "./world/types";
+import { summarizeWorld } from "./world/summary";
 
 const TAG_PROTOCOL = `## NARRATIVE STYLE
 - Write in second person ("You see...", "You feel...")
@@ -49,6 +51,7 @@ export interface ComposeArgs {
   character?: CharacterContext | null;
   memory?: StoryMemory | null;
   wallet?: WalletContext | null;
+  world?: WorldState | null;
 }
 
 function topBeliefs(memory: StoryMemory | null | undefined, n = 3): string[] {
@@ -70,7 +73,7 @@ function buildMemoryContext(memory: StoryMemory): string {
   return parts.join("\n");
 }
 
-export function composeSystemPrompt({ character, memory, wallet }: ComposeArgs = {}): string {
+export function composeSystemPrompt({ character, memory, wallet, world }: ComposeArgs = {}): string {
   const sections: string[] = [
     "You are the narrator for Tales of Tasern, an interactive fiction experience.",
     worldContext,
@@ -123,6 +126,13 @@ export function composeSystemPrompt({ character, memory, wallet }: ComposeArgs =
     );
   }
 
+  // Living world state — the belief-driven simulation the story plays against.
+  if (world) {
+    sections.push(
+      `## THE STATE OF TASERN (the living world right now — let it colour the scene, NPCs, and rumours)\n${summarizeWorld(world)}`
+    );
+  }
+
   // Moons (brief, always)
   sections.push(`## THE THREE MOONS\n${moonsBrief}`);
 
@@ -154,6 +164,19 @@ Here is the story:
 `;
 
 export const MEMORY_EXTRACTION_SYSTEM = "You are a story analyst. Extract facts from the story as JSON. Respond ONLY with valid JSON.";
+
+export const WORLD_DREAMER_SYSTEM =
+  "You are the Chronicler of Tasern, recording how the living world shifts between a traveller's visits. Respond ONLY with 1-2 lines, each of the form [WORLD_EVENT: a single vivid sentence].";
+
+export function buildWorldDreamerPrompt(stateSummary: string): string {
+  return `The world of Tasern has turned. Given its current state, record 1-2 brief happenings that plausibly unfold across the world — faction moves, omens, the moons' influence, or consequences of shifting belief. Reference the state; keep each to one vivid sentence. Do not mention game mechanics, dice, or the player.
+
+Current state:
+${stateSummary}
+
+Respond ONLY with lines of the form:
+[WORLD_EVENT: a single-sentence happening]`;
+}
 
 // Appended to an action prompt when the stochastic backstop decides the world should
 // intrude. The narrator supplies the fiction and the approach; do NOT resolve it.
