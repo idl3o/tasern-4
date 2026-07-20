@@ -719,6 +719,61 @@ Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
     [messages, pendingRoll, reinforceAffinity, smartGenerate, finalizeAfterGeneration]
   );
 
+  // Player-initiated ("declare an attempt"): the player commits an action + approach
+  // and has ALREADY rolled the d20 (rawRoll from the UI animation). Roll-first — we
+  // resolve with the belief modifier, then the AI narrates the outcome at that tier.
+  const attemptAction = useCallback(
+    async (action: string, approach: Approach, rawRoll: number) => {
+      if (isGeneratingRef.current) return;
+      isGeneratingRef.current = true;
+
+      // Committing to an approach reinforces it (belief accumulation); the modifier is
+      // then read from the updated strength, so a deliberate attempt counts toward itself.
+      reinforceAffinity(approach);
+      const story = getActiveStory();
+      const modifier = affinityModifier(story?.memory?.affinityStrengths?.[approach]);
+      const result = resolveRoll(rawRoll, modifier, approach);
+
+      selectedApproachRef.current = null;
+      calmTurnsRef.current = 0; // a roll happened — reset the fate backstop streak
+      setChoices([]);
+      setPendingRoll(null);
+
+      const playerId = safeUUID();
+      const narratorId = safeUUID();
+      const rollMsg: StoryMessage = {
+        id: safeUUID(),
+        role: "system",
+        content: formatRoll(result),
+        timestamp: Date.now(),
+        diceRoll: result.total,
+      };
+
+      const priorHistory = messages;
+      const newMessages: StoryMessage[] = [
+        ...messages,
+        { id: playerId, role: "player", content: action, timestamp: Date.now() },
+        rollMsg,
+        { id: narratorId, role: "narrator", content: "", timestamp: Date.now() },
+      ];
+      setMessages(newMessages);
+      setIsLoading(true);
+
+      const prompt = `The traveler deliberately attempts: "${action}", meeting the moment through ${approach}.${buildDicePrompt(result)}
+Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
+
+      try {
+        const content = await smartGenerate(prompt, priorHistory, narratorId);
+        const finalMessages = newMessages.map((m) => (m.id === narratorId ? { ...m, content } : m));
+        finalizeAfterGeneration(finalMessages);
+      } finally {
+        setIsLoading(false);
+        isGeneratingRef.current = false;
+      }
+    },
+    [messages, reinforceAffinity, getActiveStory, smartGenerate, finalizeAfterGeneration]
+  );
+
   const resetSession = useCallback(() => {
     setMessages([]);
     setIsLoading(false);
@@ -739,6 +794,7 @@ Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
     startStory,
     continueStory,
     sendAction,
+    attemptAction,
     resolveAIRoll,
     resetSession,
     rollD20,

@@ -5,7 +5,15 @@ import { useWebLLM } from "@/hooks/useWebLLM";
 import { useLocalOllama } from "@/hooks/useLocalOllama";
 import { useWalletContext } from "@/hooks/useWalletContext";
 import { useStoryEngine, getRollTier, rollD20, type SuggestedMove } from "@/hooks/useStoryEngine";
-import { resolveRoll } from "@/lib/rolls";
+import { resolveRoll, affinityModifier, type Approach } from "@/lib/rolls";
+
+// Proactive-roll chips: the four approaches surfaced as first-class verbs.
+const APPROACH_CHIPS: { approach: Approach; icon: string }[] = [
+  { approach: "Combat", icon: "⚔" },
+  { approach: "Perception", icon: "👁" },
+  { approach: "Nature", icon: "🍃" },
+  { approach: "Chaos", icon: "🌀" },
+];
 import { WebLLMSetup } from "./WebLLMSetup";
 import { CharacterCreation, type CharacterChoices } from "./CharacterCreation";
 import { useStoryStore, type SavedStory } from "@/state/storyStore";
@@ -60,9 +68,13 @@ export function StoryInterface() {
     startStory: startStoryEngine,
     continueStory: continueStoryEngine,
     sendAction,
+    attemptAction,
     resolveAIRoll,
     resetSession,
   } = useStoryEngine();
+
+  // A player-declared attempt currently rolling (roll-first), for the transient panel.
+  const [attempt, setAttempt] = useState<{ action: string; approach: Approach } | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -121,6 +133,7 @@ export function StoryInterface() {
     resetSession();
     setHasStarted(false);
     setDiceRoll(null);
+    setAttempt(null);
     setShowStatus(false);
     setShowCharCreation(false);
   };
@@ -148,6 +161,19 @@ export function StoryInterface() {
     if (isLoading) return;
     setDiceRoll(null);
     sendAction(move.text, move.approach);
+  };
+
+  // Player-initiated roll: commit the typed action + approach and roll immediately.
+  const handleAttempt = (approach: Approach) => {
+    if (!input.trim() || isLoading || isRolling) return;
+    const action = input.trim();
+    setInput("");
+    setDiceRoll(null);
+    setAttempt({ action, approach });
+    animateRoll((natural) => {
+      attemptAction(action, approach, natural);
+      setAttempt(null);
+    });
   };
 
   // Roll the d20 a [ROLL_REQUIRED] asked for, then resolve with the belief modifier.
@@ -568,6 +594,16 @@ export function StoryInterface() {
               </button>
             )}
           </div>
+        ) : attempt ? (
+          <div className="max-w-4xl mx-auto text-center space-y-2">
+            <p className="text-parchment/60 text-sm italic">&ldquo;{attempt.action}&rdquo;</p>
+            <p className="text-gold text-sm tracking-widest uppercase" style={{ fontFamily: "'Cinzel', serif" }}>
+              Testing fate · {attempt.approach}
+            </p>
+            <p className={`text-3xl font-bold ${diceRoll !== null ? getRollTier(diceRoll).color : "text-gold"}`}>
+              {diceRoll ?? "—"}
+            </p>
+          </div>
         ) : (
           <form onSubmit={submitAction} className="max-w-4xl mx-auto">
             {choices.length > 0 && !isLoading && (
@@ -601,6 +637,29 @@ export function StoryInterface() {
                 {isLoading ? "..." : "Act"}
               </button>
             </div>
+
+            {/* Proactive roll: commit the typed action + approach and test fate now. */}
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              <span className="text-parchment/30 text-xs mr-1">or test fate:</span>
+              {APPROACH_CHIPS.map(({ approach, icon }) => {
+                const mod = affinityModifier(activeStory?.memory?.affinityStrengths?.[approach]);
+                return (
+                  <button
+                    key={approach}
+                    type="button"
+                    onClick={() => handleAttempt(approach)}
+                    disabled={isLoading || isRolling || !input.trim()}
+                    title={`Attempt your action, rolling ${approach}${mod > 0 ? ` (+${mod})` : ""}`}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-gold/20 bg-void/50 text-xs text-parchment/70 hover:border-gold/40 hover:text-gold hover:bg-gold/5 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <span>{icon}</span>
+                    <span>{approach}</span>
+                    {mod > 0 && <span className="text-green-400">+{mod}</span>}
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="flex justify-between items-center mt-2 text-xs">
               <p className="text-parchment/30">
                 Describe your action, speak to characters, or explore the world
