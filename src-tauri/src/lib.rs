@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use std::sync::OnceLock;
+use std::time::Duration;
+use tokio::process::Command;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OllamaModel {
@@ -15,15 +17,27 @@ pub struct OllamaStatus {
     pub models: Vec<String>,
 }
 
+/// Shared HTTP client (connection pooling) instead of one per request.
+fn http() -> &'static reqwest::Client {
+    static HTTP: OnceLock<reqwest::Client> = OnceLock::new();
+    HTTP.get_or_init(reqwest::Client::new)
+}
+
+/// Validate a model name before passing it to `ollama pull` to avoid argument
+/// injection (a leading '-' would be read as a flag) and stray characters.
+fn is_valid_model_name(model: &str) -> bool {
+    !model.is_empty()
+        && !model.starts_with('-')
+        && model
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '/' | '-'))
+}
+
 /// Check if Ollama is installed on the system
 #[tauri::command]
 async fn check_ollama_installed() -> Result<bool, String> {
-    // Try to run 'ollama --version' to check if installed
-    let output = Command::new("ollama")
-        .arg("--version")
-        .output();
-
-    match output {
+    // Try to run 'ollama --version' to check if installed (async, non-blocking)
+    match Command::new("ollama").arg("--version").output().await {
         Ok(out) => Ok(out.status.success()),
         Err(_) => Ok(false),
     }
@@ -32,10 +46,9 @@ async fn check_ollama_installed() -> Result<bool, String> {
 /// Check if Ollama server is running by hitting the API
 #[tauri::command]
 async fn check_ollama_running() -> Result<bool, String> {
-    let client = reqwest::Client::new();
-    let result = client
+    let result = http()
         .get("http://localhost:11434/api/tags")
-        .timeout(std::time::Duration::from_secs(2))
+        .timeout(Duration::from_secs(2))
         .send()
         .await;
 
@@ -48,11 +61,14 @@ async fn check_ollama_running() -> Result<bool, String> {
 /// Start Ollama server
 #[tauri::command]
 async fn start_ollama() -> Result<(), String> {
-    // On Windows, 'ollama serve' runs in foreground
-    // We spawn it detached so it runs in background
+    // Don't spawn a second server if one is already up (avoids orphaned duplicates).
+    if check_ollama_running().await.unwrap_or(false) {
+        return Ok(());
+    }
+
+    // On Windows, 'ollama serve' runs in foreground; spawn it detached.
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         const DETACHED_PROCESS: u32 = 0x00000008;
 
@@ -71,18 +87,23 @@ async fn start_ollama() -> Result<(), String> {
             .map_err(|e| format!("Failed to start Ollama: {}", e))?;
     }
 
-    // Wait a moment for server to start
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    // Poll for readiness (up to ~10s) instead of a blind fixed sleep.
+    for _ in 0..20 {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        if check_ollama_running().await.unwrap_or(false) {
+            return Ok(());
+        }
+    }
 
-    Ok(())
+    Err("Ollama was started but did not become ready in time".to_string())
 }
 
 /// List available models
 #[tauri::command]
 async fn list_models() -> Result<Vec<String>, String> {
-    let client = reqwest::Client::new();
-    let response = client
+    let response = http()
         .get("http://localhost:11434/api/tags")
+        .timeout(Duration::from_secs(5))
         .send()
         .await
         .map_err(|e| format!("Failed to connect to Ollama: {}", e))?;
@@ -114,10 +135,16 @@ async fn has_model(model: String) -> Result<bool, String> {
 /// Pull a model (this can take a while)
 #[tauri::command]
 async fn pull_model(model: String) -> Result<(), String> {
+    if !is_valid_model_name(&model) {
+        return Err(format!("Invalid model name: {}", model));
+    }
+
+    // Async output() so the multi-minute pull doesn't block a tokio worker thread.
     let output = Command::new("ollama")
         .arg("pull")
         .arg(&model)
         .output()
+        .await
         .map_err(|e| format!("Failed to pull model: {}", e))?;
 
     if output.status.success() {
@@ -155,7 +182,6 @@ async fn open_ollama_download() -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             check_ollama_installed,
             check_ollama_running,

@@ -19,10 +19,11 @@ import {
   type CharacterContext,
 } from "@/lib/prompt";
 import type { CharacterChoices } from "@/components/CharacterCreation";
+import { safeUUID } from "@/lib/id";
 
 const MEMORY_EXTRACTION_THRESHOLD = 10;
 
-function rollD20(): number {
+export function rollD20(): number {
   return Math.floor(Math.random() * 20) + 1;
 }
 
@@ -41,12 +42,10 @@ export function getRollTier(roll: number): RollTier {
 }
 
 function parseRollRequired(content: string): { cleanContent: string; reason: string | null } {
-  const match = content.match(/\[ROLL_REQUIRED:\s*(.+?)\]\s*$/);
+  const match = content.match(/\[ROLL_REQUIRED:\s*(.+?)\]/);
   if (match) {
-    return {
-      cleanContent: content.slice(0, match.index).trimEnd(),
-      reason: match[1].trim(),
-    };
+    const cleanContent = content.replace(/\[ROLL_REQUIRED:\s*.+?\]/g, "").trimEnd();
+    return { cleanContent, reason: match[1].trim() };
   }
   return { cleanContent: content, reason: null };
 }
@@ -65,7 +64,7 @@ function parseItemSpellTags(content: string): {
 
   let cleaned = content;
 
-  cleaned = cleaned.replace(/\[ITEM_GAINED:\s*(.+?)\s*-\s*(.+?)\]\s*/g, (_, name, desc) => {
+  cleaned = cleaned.replace(/\[ITEM_GAINED:\s*([^\]]+?)\s+-\s+(.+?)\]\s*/g, (_, name, desc) => {
     itemsGained.push({ name: name.trim(), description: desc.trim() });
     return "";
   });
@@ -77,7 +76,7 @@ function parseItemSpellTags(content: string): {
     itemsLost.push(name.trim());
     return "";
   });
-  cleaned = cleaned.replace(/\[SPELL_LEARNED:\s*(.+?)\s*-\s*(.+?)\]\s*/g, (_, name, desc) => {
+  cleaned = cleaned.replace(/\[SPELL_LEARNED:\s*([^\]]+?)\s+-\s+(.+?)\]\s*/g, (_, name, desc) => {
     spellsLearned.push({ name: name.trim(), description: desc.trim() });
     return "";
   });
@@ -110,6 +109,7 @@ export function useStoryEngine() {
   const [llmSource, setLlmSource] = useState<"local-ollama" | "webllm" | null>(null);
   const characterRef = useRef<CharacterContext | null>(null);
   const extractingRef = useRef(false);
+  const isGeneratingRef = useRef(false);
 
   const {
     getActiveStory,
@@ -150,27 +150,38 @@ export function useStoryEngine() {
   }, [getActiveStory, walletPromptContext]);
 
   const generateWithLocalOllama = useCallback(
-    async (prompt: string, systemPrompt: string, messageId: string) => {
+    async (
+      prompt: string,
+      systemPrompt: string,
+      history: StoryMessage[],
+      messageId: string
+    ): Promise<string | null> => {
       try {
+        const historyForLLM = history.map((m) => ({ role: m.role, content: m.content }));
         let fullContent = "";
-        for await (const chunk of localOllamaGenerate(prompt, systemPrompt)) {
+        for await (const chunk of localOllamaGenerate(prompt, systemPrompt, historyForLLM)) {
           fullContent += chunk;
           setMessages((prev) =>
             prev.map((msg) => (msg.id === messageId ? { ...msg, content: fullContent } : msg))
           );
         }
         setLlmSource("local-ollama");
-        return true;
+        return fullContent;
       } catch (e) {
         console.error("[Local Ollama] Generation failed:", e);
-        return false;
+        return null;
       }
     },
     [localOllamaGenerate]
   );
 
   const generateWithWebLLM = useCallback(
-    async (prompt: string, systemPrompt: string, history: StoryMessage[], messageId: string) => {
+    async (
+      prompt: string,
+      systemPrompt: string,
+      history: StoryMessage[],
+      messageId: string
+    ): Promise<string | null> => {
       try {
         // Trim history when memory exists
         const story = getActiveStory();
@@ -186,43 +197,39 @@ export function useStoryEngine() {
           );
         }
         setLlmSource("webllm");
-        return true;
+        return fullContent;
       } catch (e) {
         console.error("[WebLLM] Generation failed:", e);
-        return false;
+        return null;
       }
     },
     [webLLMGenerate, getActiveStory]
   );
 
+  // Returns the final narrator content (or a fallback message when no AI is available).
   const smartGenerate = useCallback(
-    async (prompt: string, history: StoryMessage[], messageId: string) => {
+    async (prompt: string, history: StoryMessage[], messageId: string): Promise<string> => {
       const systemPrompt = buildSystemPrompt();
       if (process.env.NODE_ENV !== "production") {
         console.log("[StoryEngine] system prompt length:", systemPrompt.length);
       }
 
       if (localOllamaAvailable) {
-        const success = await generateWithLocalOllama(prompt, systemPrompt, messageId);
-        if (success) return;
+        const content = await generateWithLocalOllama(prompt, systemPrompt, history, messageId);
+        if (content !== null) return content;
       }
 
       if (webLLMReady) {
-        const success = await generateWithWebLLM(prompt, systemPrompt, history, messageId);
-        if (success) return;
+        const content = await generateWithWebLLM(prompt, systemPrompt, history, messageId);
+        if (content !== null) return content;
       }
 
+      const fallback =
+        "The threads of fate tangle... something interferes with your arrival. (No AI available - please ensure Ollama is running)";
       setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === messageId
-            ? {
-                ...msg,
-                content:
-                  "The threads of fate tangle... something interferes with your arrival. (No AI available - please ensure Ollama is running)",
-              }
-            : msg
-        )
+        prev.map((msg) => (msg.id === messageId ? { ...msg, content: fallback } : msg))
       );
+      return fallback;
     },
     [buildSystemPrompt, localOllamaAvailable, generateWithLocalOllama, webLLMReady, generateWithWebLLM]
   );
@@ -258,19 +265,25 @@ export function useStoryEngine() {
 
         let memory: StoryMemory;
         try {
-          const jsonStr = response.replace(/```json?\s*/g, "").replace(/```\s*/g, "").trim();
+          // Tolerate models that wrap JSON in prose/fences: take first { … last }.
+          const cleaned = response.replace(/```json?\s*/gi, "").replace(/```\s*/g, "");
+          const first = cleaned.indexOf("{");
+          const last = cleaned.lastIndexOf("}");
+          const jsonStr = first !== -1 && last !== -1 ? cleaned.slice(first, last + 1) : cleaned.trim();
           const parsed = JSON.parse(jsonStr);
           memory = {
             characterName: parsed.characterName || null,
             currentLocation: parsed.currentLocation || null,
             keyEvents: Array.isArray(parsed.keyEvents) ? parsed.keyEvents.slice(0, 15) : [],
-            npcsEncountered: Array.isArray(parsed.npcsEncountered) ? parsed.npcsEncountered : [],
-            beliefs: Array.isArray(parsed.beliefs) ? parsed.beliefs : [],
+            npcsEncountered: Array.isArray(parsed.npcsEncountered) ? parsed.npcsEncountered.slice(0, 20) : [],
+            beliefs: Array.isArray(parsed.beliefs) ? parsed.beliefs.slice(0, 20) : [],
             beliefStrengths: story.memory?.beliefStrengths || {},
             faction: parsed.faction || null,
             summary: parsed.summary || "",
-            inventory: Array.isArray(parsed.inventory) ? parsed.inventory : [],
-            spells: Array.isArray(parsed.spells) ? parsed.spells : [],
+            // Inventory & spells are authoritatively tracked via [ITEM_GAINED]/[SPELL_LEARNED]
+            // tags in the store — never let the extraction LLM overwrite them.
+            inventory: story.memory?.inventory || [],
+            spells: story.memory?.spells || [],
           };
         } catch {
           console.log("[Memory] JSON parse failed, storing raw summary");
@@ -347,18 +360,18 @@ export function useStoryEngine() {
       const notifications: StoryMessage[] = [];
       for (const item of itemsGained) {
         notifications.push({
-          id: crypto.randomUUID(),
+          id: safeUUID(),
           role: "system",
           content: `+ ${item.name}${item.description ? ` — ${item.description}` : ""}`,
           timestamp: Date.now(),
         });
       }
       for (const name of itemsLost) {
-        notifications.push({ id: crypto.randomUUID(), role: "system", content: `- ${name}`, timestamp: Date.now() });
+        notifications.push({ id: safeUUID(), role: "system", content: `- ${name}`, timestamp: Date.now() });
       }
       for (const spell of spellsLearned) {
         notifications.push({
-          id: crypto.randomUUID(),
+          id: safeUUID(),
           role: "system",
           content: `✦ ${spell.name}${spell.description ? ` — ${spell.description}` : ""}`,
           timestamp: Date.now(),
@@ -366,7 +379,7 @@ export function useStoryEngine() {
       }
       for (const name of spellsLost) {
         notifications.push({
-          id: crypto.randomUUID(),
+          id: safeUUID(),
           role: "system",
           content: `✧ Lost: ${name}`,
           timestamp: Date.now(),
@@ -380,18 +393,22 @@ export function useStoryEngine() {
     [addItem, removeItem, addSpell, removeSpell]
   );
 
-  const checkForRollRequest = useCallback((msgs: StoryMessage[]) => {
-    const lastNarrator = [...msgs].reverse().find((m) => m.role === "narrator");
-    if (!lastNarrator || !lastNarrator.content) return;
+  // Pure: strips a [ROLL_REQUIRED] tag from the last narrator message and reports the reason.
+  const checkForRollRequest = useCallback(
+    (msgs: StoryMessage[]): { messages: StoryMessage[]; reason: string | null } => {
+      const lastNarrator = [...msgs].reverse().find((m) => m.role === "narrator");
+      if (!lastNarrator || !lastNarrator.content) return { messages: msgs, reason: null };
 
-    const { cleanContent, reason } = parseRollRequired(lastNarrator.content);
-    if (reason) {
-      setMessages((prev) =>
-        prev.map((msg) => (msg.id === lastNarrator.id ? { ...msg, content: cleanContent } : msg))
+      const { cleanContent, reason } = parseRollRequired(lastNarrator.content);
+      if (!reason) return { messages: msgs, reason: null };
+
+      const updated = msgs.map((msg) =>
+        msg.id === lastNarrator.id ? { ...msg, content: cleanContent } : msg
       );
-      setPendingRoll(reason);
-    }
-  }, []);
+      return { messages: updated, reason };
+    },
+    []
+  );
 
   const saveMessages = useCallback(
     (msgs: StoryMessage[]) => {
@@ -401,18 +418,25 @@ export function useStoryEngine() {
     [getActiveStory, setActiveMessages]
   );
 
-  const finalizeAfterGeneration = useCallback(() => {
-    setMessages((prev) => {
-      const updated = checkForItemSpellTags(prev);
-      checkForRollRequest(updated);
-      saveMessages(updated);
-      extractMemory(updated);
-      return updated;
-    });
-  }, [checkForItemSpellTags, checkForRollRequest, saveMessages, extractMemory]);
+  // Runs after a generation completes. Side effects (store mutations, extraction)
+  // execute exactly once here — never inside a setState updater — so React StrictMode's
+  // double-invocation of updaters can't double-grant items or double-fire extraction.
+  const finalizeAfterGeneration = useCallback(
+    (finalMessages: StoryMessage[]) => {
+      const withItems = checkForItemSpellTags(finalMessages);
+      const { messages: cleaned, reason } = checkForRollRequest(withItems);
+      setMessages(cleaned);
+      saveMessages(cleaned);
+      if (reason) setPendingRoll(reason);
+      extractMemory(cleaned);
+    },
+    [checkForItemSpellTags, checkForRollRequest, saveMessages, extractMemory]
+  );
 
   const startStory = useCallback(
     async (choices: CharacterChoices) => {
+      if (isGeneratingRef.current) return;
+      isGeneratingRef.current = true;
       createStory();
 
       // Persist character context for the prompt
@@ -467,16 +491,20 @@ Keep the opening to 2-3 paragraphs. Make it memorable.`;
         updateTitle(`${choices.name}'s Tale`);
       }
 
-      const openingId = crypto.randomUUID();
+      const openingId = safeUUID();
       const initial: StoryMessage[] = [
         { id: openingId, role: "narrator", content: "", timestamp: Date.now() },
       ];
       setMessages(initial);
 
-      await smartGenerate(customPrompt, [], openingId);
-      setIsLoading(false);
-
-      finalizeAfterGeneration();
+      try {
+        const content = await smartGenerate(customPrompt, [], openingId);
+        const finalMessages = initial.map((m) => (m.id === openingId ? { ...m, content } : m));
+        finalizeAfterGeneration(finalMessages);
+      } finally {
+        setIsLoading(false);
+        isGeneratingRef.current = false;
+      }
     },
     [createStory, updateMemory, reinforceBeliefs, addSpell, addItem, updateTitle, smartGenerate, finalizeAfterGeneration]
   );
@@ -499,14 +527,21 @@ Keep the opening to 2-3 paragraphs. Make it memorable.`;
 
   const sendAction = useCallback(
     async (action: string, roll: number) => {
-      const playerId = crypto.randomUUID();
-      const narratorId = crypto.randomUUID();
+      if (isGeneratingRef.current) return;
+      isGeneratingRef.current = true;
+
+      const playerId = safeUUID();
+      const narratorId = safeUUID();
+
+      // History for the LLM = the story so far, before this turn's action. The action
+      // is restated in the prompt, so including it here too would duplicate it.
+      const priorHistory = messages;
 
       const newMessages: StoryMessage[] = [
         ...messages,
         { id: playerId, role: "player", content: action, timestamp: Date.now(), diceRoll: roll },
         {
-          id: crypto.randomUUID(),
+          id: safeUUID(),
           role: "system",
           content: `Rolled d20: ${roll} — ${getRollTier(roll).name}`,
           timestamp: Date.now(),
@@ -529,33 +564,41 @@ React to what they do naturally within the world's logic. Remember:
 Write 2-4 paragraphs continuing the narrative. End in a way that invites further action.`;
       prompt += buildDicePrompt(roll);
 
-      await smartGenerate(prompt, newMessages.slice(0, -1), narratorId);
-      setIsLoading(false);
-
-      finalizeAfterGeneration();
+      try {
+        const content = await smartGenerate(prompt, priorHistory, narratorId);
+        const finalMessages = newMessages.map((m) => (m.id === narratorId ? { ...m, content } : m));
+        finalizeAfterGeneration(finalMessages);
+      } finally {
+        setIsLoading(false);
+        isGeneratingRef.current = false;
+      }
     },
     [messages, smartGenerate, finalizeAfterGeneration]
   );
 
   const resolveAIRoll = useCallback(
     async (roll: number) => {
+      if (isGeneratingRef.current) return;
+      isGeneratingRef.current = true;
       setPendingRoll(null);
 
-      const narratorId = crypto.randomUUID();
+      const narratorId = safeUUID();
       const tier = getRollTier(roll);
       const rollMsg: StoryMessage = {
-        id: crypto.randomUUID(),
+        id: safeUUID(),
         role: "system",
         content: `Rolled d20: ${roll} — ${tier.name}`,
         timestamp: Date.now(),
         diceRoll: roll,
       };
 
-      setMessages((prev) => [
-        ...prev,
+      const priorHistory = messages;
+      const newMessages: StoryMessage[] = [
+        ...messages,
         rollMsg,
         { id: narratorId, role: "narrator", content: "", timestamp: Date.now() },
-      ]);
+      ];
+      setMessages(newMessages);
       setIsLoading(true);
 
       const prompt = `[DICE ROLL: ${roll}/20 — ${tier.name}]
@@ -563,10 +606,14 @@ The fate roll has been cast. The result is ${roll} — ${tier.description}.
 Continue the story based on this roll result. Do not mention dice or game mechanics — weave the outcome naturally into the narrative.
 Write 2-4 paragraphs. End in a way that invites further action.`;
 
-      await smartGenerate(prompt, messages, narratorId);
-      setIsLoading(false);
-
-      finalizeAfterGeneration();
+      try {
+        const content = await smartGenerate(prompt, priorHistory, narratorId);
+        const finalMessages = newMessages.map((m) => (m.id === narratorId ? { ...m, content } : m));
+        finalizeAfterGeneration(finalMessages);
+      } finally {
+        setIsLoading(false);
+        isGeneratingRef.current = false;
+      }
     },
     [messages, smartGenerate, finalizeAfterGeneration]
   );

@@ -76,12 +76,22 @@ export const useWebLLMStore = create<WebLLMState>()(
     }),
     {
       name: "tasern-webllm",
+      version: 1,
+      // Rehydrate manually after mount (matches storyStore) to avoid SSR mismatch.
+      skipHydration: true,
       partialize: (state) => ({
         preferWebLLM: state.preferWebLLM,
         hasDeclinedWebLLM: state.hasDeclinedWebLLM,
         hasDownloadedOnce: state.hasDownloadedOnce,
         modelId: state.modelId,
       }),
+      // Fall back to DEFAULT_MODEL if a persisted modelId is no longer offered.
+      merge: (persisted, current) => {
+        const p = (persisted || {}) as Partial<WebLLMState>;
+        const validModel =
+          p.modelId && AVAILABLE_MODELS.some((m) => m.id === p.modelId) ? p.modelId : DEFAULT_MODEL;
+        return { ...current, ...p, modelId: validModel };
+      },
     }
   )
 );

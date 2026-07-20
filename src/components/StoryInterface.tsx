@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useWebLLM } from "@/hooks/useWebLLM";
 import { useLocalOllama } from "@/hooks/useLocalOllama";
 import { useWalletContext } from "@/hooks/useWalletContext";
-import { useStoryEngine, getRollTier } from "@/hooks/useStoryEngine";
+import { useStoryEngine, getRollTier, rollD20 } from "@/hooks/useStoryEngine";
 import { WebLLMSetup } from "./WebLLMSetup";
 import { CharacterCreation, type CharacterChoices } from "./CharacterCreation";
 import { useStoryStore, type SavedStory } from "@/state/storyStore";
@@ -21,10 +21,6 @@ function formatTimeAgo(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString();
 }
 
-function rollD20(): number {
-  return Math.floor(Math.random() * 20) + 1;
-}
-
 export function StoryInterface() {
   const { address, isConnected } = useWalletContext();
   const [input, setInput] = useState("");
@@ -38,8 +34,10 @@ export function StoryInterface() {
   const [showStatus, setShowStatus] = useState(false);
   const [showCharCreation, setShowCharCreation] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const rollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const { stories, getActiveStory, deleteStory, clearActiveStory } = useStoryStore();
+  const { stories, getActiveStory, deleteStory, clearActiveStory, storageError, clearStorageError } =
+    useStoryStore();
 
   const {
     isReady: webLLMReady,
@@ -71,15 +69,17 @@ export function StoryInterface() {
 
   // Animated dice roll - cycles through random numbers then lands
   const animateRoll = useCallback((onComplete?: (result: number) => void) => {
+    if (rollIntervalRef.current) clearInterval(rollIntervalRef.current);
     setIsRolling(true);
     const finalResult = rollD20();
     let ticks = 0;
     const maxTicks = 10;
-    const interval = setInterval(() => {
+    rollIntervalRef.current = setInterval(() => {
       setDiceRoll(rollD20());
       ticks++;
       if (ticks >= maxTicks) {
-        clearInterval(interval);
+        if (rollIntervalRef.current) clearInterval(rollIntervalRef.current);
+        rollIntervalRef.current = null;
         setDiceRoll(finalResult);
         setIsRolling(false);
         onComplete?.(finalResult);
@@ -90,6 +90,13 @@ export function StoryInterface() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Clear any in-flight dice animation if the component unmounts
+  useEffect(() => {
+    return () => {
+      if (rollIntervalRef.current) clearInterval(rollIntervalRef.current);
+    };
+  }, []);
 
   const activeStory = getActiveStory();
 
@@ -344,6 +351,14 @@ export function StoryInterface() {
   // Story interface
   return (
     <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full relative">
+      {storageError && (
+        <div className="mx-4 mt-2 flex items-center justify-between gap-3 rounded border border-red-400/40 bg-red-950/40 px-3 py-2 text-xs text-red-300">
+          <span>Saving failed — your browser storage may be full. Older stories can be deleted to free space.</span>
+          <button onClick={clearStorageError} className="shrink-0 text-red-300/60 hover:text-red-300">
+            dismiss
+          </button>
+        </div>
+      )}
       <div className="flex justify-end px-4 pt-2">
         <button
           onClick={() => setShowStatus(!showStatus)}

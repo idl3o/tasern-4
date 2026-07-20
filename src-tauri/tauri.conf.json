@@ -24,7 +24,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; worker-src 'self' blob:; connect-src 'self' http://localhost:11434 https://huggingface.co https://*.huggingface.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.huggingface.co https://raw.githubusercontent.com"
     }
   },
   "bundle": {
@@ -42,9 +42,5 @@
       "timestampUrl": ""
     }
   },
-  "plugins": {
-    "shell": {
-      "open": true
-    }
-  }
+  "plugins": {}
 }
