@@ -8,6 +8,25 @@ export const MODIFIER_PER_STRENGTH = 2; // +1 modifier per this many reinforceme
 export const MODIFIER_CAP = 5;
 export const CREATION_AFFINITY_SEED = 2; // starting reinforcements for the chosen belief (=> +1)
 
+// Stochastic "fate stirs" backstop: when the AI hasn't called a roll for a while,
+// a rising chance introduces a world-intrusion check so the dice/belief layer never
+// goes silent. Rises with calm turns (past a cooldown) so it self-paces — no clusters,
+// no long droughts.
+export const FATE_COOLDOWN = 2; // calm turns that must pass before fate can stir
+export const FATE_BASE = 0.15; // chance on the first eligible turn
+export const FATE_RAMP = 0.15; // added per additional calm turn
+export const FATE_MAX = 0.85; // ceiling
+
+export function fateChance(calmTurns: number): number {
+  const over = calmTurns - FATE_COOLDOWN;
+  if (over < 0) return 0;
+  return Math.min(FATE_MAX, FATE_BASE + FATE_RAMP * over);
+}
+
+export function fateStirs(calmTurns: number): boolean {
+  return Math.random() < fateChance(calmTurns);
+}
+
 export interface RollTier {
   name: string;
   description: string;

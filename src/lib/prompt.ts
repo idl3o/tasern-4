@@ -155,6 +155,12 @@ Here is the story:
 
 export const MEMORY_EXTRACTION_SYSTEM = "You are a story analyst. Extract facts from the story as JSON. Respond ONLY with valid JSON.";
 
+// Appended to an action prompt when the stochastic backstop decides the world should
+// intrude. The narrator supplies the fiction and the approach; do NOT resolve it.
+export const FATE_INTRUSION_PROMPT = `
+
+Fate stirs — reality thins around the traveler. Beyond simply reacting to their action, weave in an unexpected complication or intrusion that fits this scene: an omen, a belief-storm, the pull of the Tear, or a sudden move by someone or something present. Build to the decisive moment and STOP there — do not resolve it. End your response by calling for a check per the protocol, choosing the approach that best fits how the traveler would meet it: [ROLL_REQUIRED: brief reason | approach:combat]. Do not list choices this turn.`;
+
 export function buildDicePrompt(result: RollResult): string {
   const approachNote = result.approach ? ` acting through ${result.approach}` : "";
   return `\n\n[DICE ROLL: ${result.total} — ${result.tier.name}]
