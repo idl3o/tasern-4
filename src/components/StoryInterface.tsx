@@ -67,6 +67,8 @@ export function StoryInterface() {
     pendingRoll,
     choices,
     llmSource,
+    chapter,
+    winding,
     startStory: startStoryEngine,
     continueStory: continueStoryEngine,
     sendAction,
@@ -532,6 +534,18 @@ export function StoryInterface() {
               message.role === "player" ? "pl-8 border-l-2 border-gold/40" : message.role === "system" ? "text-center" : ""
             }`}
           >
+            {message.divider && (
+              <div className="flex items-center gap-3 my-6">
+                <div className="flex-1 h-px bg-gold/20" />
+                <span
+                  className="text-gold/70 text-sm tracking-widest uppercase"
+                  style={{ fontFamily: "'Cinzel', serif" }}
+                >
+                  ❖ Chapter {message.divider} ❖
+                </span>
+                <div className="flex-1 h-px bg-gold/20" />
+              </div>
+            )}
             {message.role === "player" && (
               <>
                 <p className="text-gold/60 text-sm mb-1 tracking-wide" style={{ fontFamily: "'Cinzel', serif" }}>
@@ -551,7 +565,7 @@ export function StoryInterface() {
                 </span>
               </div>
             )}
-            {message.role === "system" && !message.diceRoll && (
+            {message.role === "system" && !message.diceRoll && !message.divider && (
               <div
                 className={`inline-flex items-center gap-1 text-sm italic ${
                   message.content.startsWith("+")
@@ -685,9 +699,16 @@ export function StoryInterface() {
 
             <div className="flex justify-between items-center mt-2 text-xs">
               <p className="text-parchment/30">
-                Describe your action, speak to characters, or explore the world
+                {winding ? (
+                  <span className="text-gold/60 italic">The chapter draws toward its close…</span>
+                ) : (
+                  "Describe your action, speak to characters, or explore the world"
+                )}
               </p>
               <div className="flex items-center gap-3">
+                <p className="text-parchment/30" style={{ fontFamily: "'Cinzel', serif" }}>
+                  Chapter {chapter}
+                </p>
                 {llmSource && (
                   <p className="text-parchment/30">
                     {llmSource === "local-ollama" ? "Local Ollama" : "Browser AI"}

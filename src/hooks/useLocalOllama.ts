@@ -1,9 +1,15 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { CONTEXT_TOKENS } from "@/lib/chapters";
 
 const OLLAMA_URL = "http://localhost:11434";
 const DEFAULT_MODEL = "llama3.2";
+
+export interface GenStats {
+  promptTokens: number;
+  evalTokens: number;
+}
 
 interface OllamaStatus {
   available: boolean;
@@ -72,7 +78,8 @@ export function useLocalOllama() {
     async function* (
       prompt: string,
       systemPrompt: string,
-      history?: Array<{ role: string; content: string }>
+      history?: Array<{ role: string; content: string }>,
+      onStats?: (stats: GenStats) => void
     ): AsyncGenerator<string, void, unknown> {
       if (!status.available) {
         throw new Error("Local Ollama not available");
@@ -103,7 +110,7 @@ export function useLocalOllama() {
             model: status.selectedModel,
             messages: chatMessages,
             stream: true,
-            options: { num_ctx: 8192 },
+            options: { num_ctx: CONTEXT_TOKENS },
           }),
           signal: controller.signal,
         });
@@ -144,6 +151,9 @@ export function useLocalOllama() {
               const json = JSON.parse(line);
               const delta = json.message?.content;
               if (delta) yield delta;
+              if (json.done && onStats) {
+                onStats({ promptTokens: json.prompt_eval_count ?? 0, evalTokens: json.eval_count ?? 0 });
+              }
             } catch {
               // Skip invalid JSON lines
             }
@@ -157,6 +167,9 @@ export function useLocalOllama() {
             const json = JSON.parse(tail);
             const delta = json.message?.content;
             if (delta) yield delta;
+            if (json.done && onStats) {
+              onStats({ promptTokens: json.prompt_eval_count ?? 0, evalTokens: json.eval_count ?? 0 });
+            }
           } catch {
             // ignore incomplete trailing data
           }
