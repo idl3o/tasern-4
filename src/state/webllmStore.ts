@@ -12,39 +12,49 @@ export type WebLLMStatus =
   | "error"
   | "unsupported";
 
+export interface WebLLMModel {
+  id: string;
+  name: string;
+  downloadSize: string;
+}
+
+// Gemma 4 E2B in two builds of the same weights: f16 needs the GPU's shader-f16
+// feature; the f32 build runs without it, at a higher VRAM cost.
+export const WEBLLM_MODELS = {
+  f16: { id: "gemma-4-E2B-it-q4f16_1-MLC", name: "Gemma 4 E2B", downloadSize: "~2.8 GB" },
+  f32: { id: "gemma-4-E2B-it-q4f32_1-MLC", name: "Gemma 4 E2B", downloadSize: "~2.8 GB" },
+} as const satisfies Record<string, WebLLMModel>;
+
+/** Picks the build this GPU can run, from its WebGPU adapter's feature set. */
+export function selectModel(features: ReadonlySet<string>): WebLLMModel {
+  return features.has("shader-f16") ? WEBLLM_MODELS.f16 : WEBLLM_MODELS.f32;
+}
+
 export interface WebLLMState {
   status: WebLLMStatus;
   progress: number;
   progressText: string;
   error: string | null;
-  modelId: string;
+  // Resolved per device by the WebGPU check; null until then.
+  model: WebLLMModel | null;
   engine: any | null;
 
   // Preferences
   preferWebLLM: boolean;
   hasDeclinedWebLLM: boolean;
-  hasDownloadedOnce: boolean;
 
   // Actions
   setStatus: (status: WebLLMStatus) => void;
   setProgress: (progress: number, text?: string) => void;
   setError: (error: string | null) => void;
+  setModel: (model: WebLLMModel | null) => void;
   setEngine: (engine: any) => void;
   setPreferWebLLM: (prefer: boolean) => void;
   setHasDeclined: (declined: boolean) => void;
-  setHasDownloadedOnce: (downloaded: boolean) => void;
   reset: () => void;
 }
 
-// Recommended model for story generation
-export const DEFAULT_MODEL = "Llama-3.2-3B-Instruct-q4f16_1-MLC";
-
-// Alternative smaller models
-export const AVAILABLE_MODELS = [
-  { id: "Llama-3.2-3B-Instruct-q4f16_1-MLC", name: "Llama 3.2 3B", size: "~2GB", recommended: true },
-  { id: "Llama-3.2-1B-Instruct-q4f16_1-MLC", name: "Llama 3.2 1B", size: "~1GB", recommended: false },
-  { id: "Phi-3.5-mini-instruct-q4f16_1-MLC", name: "Phi 3.5 Mini", size: "~2GB", recommended: false },
-];
+type PersistedPrefs = Pick<WebLLMState, "preferWebLLM" | "hasDeclinedWebLLM">;
 
 export const useWebLLMStore = create<WebLLMState>()(
   persist(
@@ -53,19 +63,18 @@ export const useWebLLMStore = create<WebLLMState>()(
       progress: 0,
       progressText: "",
       error: null,
-      modelId: DEFAULT_MODEL,
+      model: null,
       engine: null,
       preferWebLLM: true,
       hasDeclinedWebLLM: false,
-      hasDownloadedOnce: false,
 
       setStatus: (status) => set({ status }),
       setProgress: (progress, text) => set({ progress, progressText: text || "" }),
       setError: (error) => set({ error, status: error ? "error" : "idle" }),
+      setModel: (model) => set({ model }),
       setEngine: (engine) => set({ engine, status: engine ? "ready" : "idle" }),
       setPreferWebLLM: (prefer) => set({ preferWebLLM: prefer }),
       setHasDeclined: (declined) => set({ hasDeclinedWebLLM: declined }),
-      setHasDownloadedOnce: (downloaded) => set({ hasDownloadedOnce: downloaded }),
       reset: () => set({
         status: "idle",
         progress: 0,
@@ -76,21 +85,22 @@ export const useWebLLMStore = create<WebLLMState>()(
     }),
     {
       name: "tasern-webllm",
-      version: 1,
+      version: 2,
       // Rehydrate manually after mount (matches storyStore) to avoid SSR mismatch.
       skipHydration: true,
-      partialize: (state) => ({
+      partialize: (state): PersistedPrefs => ({
         preferWebLLM: state.preferWebLLM,
         hasDeclinedWebLLM: state.hasDeclinedWebLLM,
-        hasDownloadedOnce: state.hasDownloadedOnce,
-        modelId: state.modelId,
       }),
-      // Fall back to DEFAULT_MODEL if a persisted modelId is no longer offered.
-      merge: (persisted, current) => {
-        const p = (persisted || {}) as Partial<WebLLMState>;
-        const validModel =
-          p.modelId && AVAILABLE_MODELS.some((m) => m.id === p.modelId) ? p.modelId : DEFAULT_MODEL;
-        return { ...current, ...p, modelId: validModel };
+      // v1 also persisted hasDownloadedOnce and modelId. The model is now resolved per
+      // device and resumed from the browser's model cache, so only preferences carry over.
+      migrate: (persisted): PersistedPrefs => {
+        const p: Record<string, unknown> =
+          typeof persisted === "object" && persisted !== null ? { ...persisted } : {};
+        return {
+          preferWebLLM: typeof p.preferWebLLM === "boolean" ? p.preferWebLLM : true,
+          hasDeclinedWebLLM: p.hasDeclinedWebLLM === true,
+        };
       },
     }
   )
