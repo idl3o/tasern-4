@@ -68,6 +68,8 @@ These files provide the **seed context** for AI story generation. Rich enough to
 
 ## Web3 Integration
 
+> **Wallet cordoned off (2026-11-02) — a decision, do not undo.** All wallet code lives in `src/lib/wallet/` and loads only when `NEXT_PUBLIC_ENABLE_WALLET=true` in a non-Tauri build (`WALLET_ENABLED` in `flag.ts`). Never import `src/lib/wallet/*` statically: building the wagmi config opens WalletConnect's relay socket, which is how the desktop app came to phone out to it.
+
 ### Identity
 - **Wallet = Character** — Your address is your persistent identity
 - **NFTs = History** — Characters/items with on-chain provenance

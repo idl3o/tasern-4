@@ -13,6 +13,8 @@ export interface CharacterChoices {
 
 interface CharacterCreationProps {
   onComplete: (choices: CharacterChoices) => void;
+  /** Back from the first step: abandon creation. */
+  onCancel: () => void;
 }
 
 const ORIGINS = [
@@ -122,7 +124,7 @@ const FACTIONS = [
 
 const TOTAL_STEPS = 4;
 
-export function CharacterCreation({ onComplete }: CharacterCreationProps) {
+export function CharacterCreation({ onComplete, onCancel }: CharacterCreationProps) {
   const [step, setStep] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [name, setName] = useState("");
@@ -172,6 +174,8 @@ export function CharacterCreation({ onComplete }: CharacterCreationProps) {
   const handleBack = () => {
     if (step > 0) {
       transition(() => setStep(step - 1));
+    } else {
+      onCancel();
     }
   };
 
@@ -342,14 +346,12 @@ export function CharacterCreation({ onComplete }: CharacterCreationProps) {
           </div>
 
           <div className="flex items-center gap-3">
-            {step > 0 && (
-              <button
-                onClick={handleBack}
-                className="text-parchment/40 hover:text-parchment/60 text-sm"
-              >
-                Back
-              </button>
-            )}
+            <button
+              onClick={handleBack}
+              className="text-parchment/40 hover:text-parchment/60 text-sm"
+            >
+              Back
+            </button>
             <button
               onClick={handleContinue}
               disabled={!canContinue()}

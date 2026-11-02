@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { safeUUID } from "@/lib/id";
+import { normalizeApproach, type Approach } from "@/lib/rolls";
 
 // Per-story message arrays are stored under their own localStorage key so the
 // main index stays small and only the active story's transcript is re-serialized
@@ -78,6 +79,12 @@ export interface StoryMemory {
   spells: InventoryItem[];
 }
 
+/** What the last narrator turn left open: suggested moves, or a roll to make. */
+export interface OpenTurn {
+  moves: Array<{ text: string; approach: Approach | null }>;
+  roll: { reason: string; approach: Approach | null; modifier: number } | null;
+}
+
 export interface SavedStory {
   id: string;
   title: string;
@@ -86,6 +93,32 @@ export interface SavedStory {
   createdAt: number;
   updatedAt: number;
   messageCountAtLastExtraction: number;
+  /** Restored on Continue; absent for stories saved before it existed. */
+  openTurn?: OpenTurn;
+}
+
+/** Narrows a persisted openTurn; anything malformed is dropped rather than trusted. */
+function parseOpenTurn(value: unknown): OpenTurn | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { moves, roll } = value as { moves?: unknown; roll?: unknown };
+  if (!Array.isArray(moves)) return undefined;
+  const parsedMoves = moves.flatMap((m: unknown) => {
+    if (typeof m !== "object" || m === null) return [];
+    const { text, approach } = m as { text?: unknown; approach?: unknown };
+    return typeof text === "string" ? [{ text, approach: normalizeApproach(typeof approach === "string" ? approach : null) }] : [];
+  });
+  let parsedRoll: OpenTurn["roll"] = null;
+  if (typeof roll === "object" && roll !== null) {
+    const { reason, approach, modifier } = roll as { reason?: unknown; approach?: unknown; modifier?: unknown };
+    if (typeof reason === "string") {
+      parsedRoll = {
+        reason,
+        approach: normalizeApproach(typeof approach === "string" ? approach : null),
+        modifier: typeof modifier === "number" ? modifier : 0,
+      };
+    }
+  }
+  return { moves: parsedMoves, roll: parsedRoll };
 }
 
 // Keep only the strongest N beliefs so the map can't grow without bound.
@@ -129,6 +162,7 @@ export interface StoryStore {
   reinforceAffinity: (affinity: string, amount?: number) => void;
   updateTitle: (title: string) => void;
   setMessageCountAtLastExtraction: (count: number) => void;
+  setOpenTurn: (turn: OpenTurn) => void;
   clearActiveStory: () => void;
   addItem: (name: string, description: string) => void;
   removeItem: (name: string) => void;
@@ -280,6 +314,14 @@ export const useStoryStore = create<StoryStore>()(
         }));
       },
 
+      setOpenTurn: (openTurn) => {
+        const { activeStoryId } = get();
+        if (!activeStoryId) return;
+        set((state) => ({
+          stories: state.stories.map((s) => (s.id === activeStoryId ? { ...s, openTurn } : s)),
+        }));
+      },
+
       clearActiveStory: () => {
         set({ activeStoryId: null });
       },
@@ -368,9 +410,10 @@ export const useStoryStore = create<StoryStore>()(
       skipHydration: true,
       // Index only: messages live under their own per-story keys, so we persist
       // the story records with an empty messages array (reattached on merge).
+      // activeStoryId is not persisted: it is session state (a reload opens the start
+      // screen, and nothing resumes a story by itself).
       partialize: (state) => ({
         stories: state.stories.map((s) => ({ ...s, messages: [] as StoryMessage[] })),
-        activeStoryId: state.activeStoryId,
       }),
       migrate: (persistedState: unknown, version: number) => {
         if (!persistedState || typeof persistedState !== "object") return persistedState;
@@ -387,20 +430,19 @@ export const useStoryStore = create<StoryStore>()(
         }
         return state;
       },
-      // Reattach each story's messages from its per-story key, normalize memory,
-      // and validate the persisted activeStoryId still exists.
+      // Reattach each story's messages from its per-story key, normalize memory and
+      // the open turn. An activeStoryId saved by older versions is ignored.
       merge: (persisted, current) => {
-        const p = (persisted || {}) as { stories?: SavedStory[]; activeStoryId?: string | null };
+        const p = (persisted || {}) as { stories?: SavedStory[] };
         const stories: SavedStory[] = Array.isArray(p.stories)
           ? p.stories.map((s) => ({
               ...s,
               memory: { ...emptyMemory(), ...(s.memory || {}) },
               messages: readMessages(s.id),
+              openTurn: parseOpenTurn(s.openTurn),
             }))
           : [];
-        const activeStoryId =
-          p.activeStoryId && stories.some((s) => s.id === p.activeStoryId) ? p.activeStoryId : null;
-        return { ...current, stories, activeStoryId };
+        return { ...current, stories, activeStoryId: null };
       },
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);

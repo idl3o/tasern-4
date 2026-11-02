@@ -3,7 +3,7 @@ import type { StoryMessage } from "@/state/storyStore";
 // Context-budget driven chaptering: a story plays against a bounded LLM window, so
 // rather than let it silently degrade we steer toward a chapter close, summarize,
 // and continue in a fresh window. Constants named for playtest tuning.
-export const CONTEXT_TOKENS = 8192; // must track num_ctx in useLocalOllama
+export const CONTEXT_TOKENS = 8192; // the Ollama num_ctx (useLocalOllama reads it from here)
 export const WIND_DOWN_RATIO = 0.7; // begin steering toward a climax
 export const CHAPTER_CLOSE_RATIO = 0.85; // force the chapter to close
 
