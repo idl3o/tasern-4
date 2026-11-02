@@ -23,6 +23,8 @@ export interface OllamaClient {
    * `numCtx` must match the chat requests': a different context size reloads the model.
    */
   warm(model: ModelName, numCtx: number, keepAlive: string, signal?: AbortSignal): Promise<void>;
+  /** Frees a model's memory now rather than when its keep_alive runs out. */
+  unload(model: ModelName, signal?: AbortSignal): Promise<void>;
   /** Downloads a model, yielding progress; throws if Ollama reports a failure. */
   pull(model: string, signal?: AbortSignal): AsyncGenerator<PullProgress, void, undefined>;
 }
@@ -145,6 +147,13 @@ export function createOllamaClient(
       // An empty message list loads the model and returns done_reason "load".
       const body = { model, messages: [], keep_alive: keepAlive, options: { num_ctx: numCtx } };
       for await (const line of streamLines("/api/chat", body, idleTimeoutMs, signal)) {
+        parseChatLine(line, model);
+      }
+    },
+
+    async unload(model, signal) {
+      // Empty messages with keep_alive 0 unloads without loading first.
+      for await (const line of streamLines("/api/chat", { model, messages: [], keep_alive: 0 }, idleTimeoutMs, signal)) {
         parseChatLine(line, model);
       }
     },

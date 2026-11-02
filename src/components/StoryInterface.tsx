@@ -64,6 +64,9 @@ export function StoryInterface() {
     selectedModel: localOllamaModel,
     chooseModel: chooseOllamaModel,
     error: ollamaError,
+    lastFailure: ollamaFailure,
+    warming: ollamaWarming,
+    thinking: ollamaThinking,
   } = useLocalOllama();
 
   const {
@@ -259,7 +262,11 @@ export function StoryInterface() {
                     ) : (
                       `(${localOllamaModel})`
                     )}
+                    {ollamaWarming && <span className="text-parchment/50"> · waking the storyteller…</span>}
                   </div>
+                )}
+                {localOllamaAvailable && ollamaFailure && (
+                  <div className="text-gold">{describeOllamaError(ollamaFailure)}</div>
                 )}
                 {!localOllamaAvailable && ollamaRunning && (
                   <div className="text-gold">Ollama is running but has no chat models. Pull one, e.g. ollama pull llama3.2</div>
@@ -606,7 +613,9 @@ export function StoryInterface() {
             {message.role !== "system" && (
               <div className={`story-text ${message.role === "player" ? "text-gold/90 italic" : "text-parchment/90"}`}>
                 {message.content || (
-                  <span className="loading-dots text-parchment/50">The story unfolds</span>
+                  <span className="loading-dots text-parchment/50">
+                    {ollamaThinking ? "The narrator considers" : "The story unfolds"}
+                  </span>
                 )}
               </div>
             )}

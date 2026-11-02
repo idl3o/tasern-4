@@ -154,6 +154,14 @@ describe("warm", () => {
   });
 });
 
+describe("unload", () => {
+  it("asks Ollama to drop the model now", async () => {
+    const transport = scriptedTransport({ lines: () => fromArray(['{"done":true,"done_reason":"unload"}']) });
+    await createOllamaClient(transport).unload("gemma4:latest" as ModelName);
+    expect(transport.calls[0]?.body).toEqual({ model: "gemma4:latest", messages: [], keep_alive: 0 });
+  });
+});
+
 describe("pull", () => {
   it("yields each progress line, with byte counts where Ollama gives them", async () => {
     const client = createOllamaClient(scriptedTransport({ lines: () => fromArray(fixtureLines("pull-existing.ndjson")) }));
