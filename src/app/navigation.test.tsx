@@ -89,8 +89,9 @@ describe("intro", () => {
     await screen.findByText(/welcome, traveler/i);
   });
 
-  it("N2: Skip intro reaches the start screen", async () => {
+  it("N2: Skip intro reaches the start screen, with no wallet in the header", async () => {
     await toStartScreen();
+    expect(within(screen.getByRole("banner")).queryByRole("button")).toBeNull();
   });
 });
 

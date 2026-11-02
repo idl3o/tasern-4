@@ -21,7 +21,7 @@ Tasern's founding rule is that **belief is magic** — gods rise from prayers, c
 - A small, deterministic **world simulation** (`src/lib/world/`) accumulates belief pressure across four approaches — Combat, Perception, Nature, Chaos — drifts faction standings, rotates the ascendant moon, and, past a threshold, fires a "reality shift" that raises a faction to ascendancy. The living world state is fed back into the story as colour.
 - Play resolves through a d20 system: the narrator calls for a roll only when the outcome is genuinely uncertain, belief reinforcement grants modifiers, and a self-pacing "fate stirs" backstop keeps the dice layer from going silent.
 
-It sits where this author's other work tends to — the intersection of Web3, AI and worldbuilding — but the wallet layer here is strictly optional (see below).
+It sits where this author's other work tends to — the intersection of Web3, AI and worldbuilding — but the wallet layer is switched off for now (see below).
 
 ## How it works
 
@@ -38,7 +38,7 @@ It sits where this author's other work tends to — the intersection of Web3, AI
 - **Lore-grounded world** — eight factions, three moons, twin suns and a detailed continental geography, authored as Markdown in `content/` and loaded as prompt context.
 - **Belief-driven world simulation** — a serialisable global world state that evolves as you play.
 - **d20 resolution with belief modifiers** — tiered outcomes from critical failure to critical success.
-- **Optional Web3** — wallet connection via RainbowKit / Wagmi is available in the browser build and treated as a persistent cross-world identity, but is never required to play.
+- **Web3, switched off for now** — wallet connection via RainbowKit / Wagmi, treated as a persistent cross-world identity, is built but disabled in both builds. Setting `NEXT_PUBLIC_ENABLE_WALLET=true` (with a WalletConnect project ID) turns it on in the browser build; it is never required to play.
 
 ## Getting started
 
@@ -66,7 +66,7 @@ npm run tauri:build  # build the desktop app (requires Rust toolchain)
 - **Browser:** open the app and choose the in-browser model; WebLLM downloads a model into your browser on first use.
 - **Ollama:** install Ollama and pull a model (the project defaults reference `llama3.2`). To let the hosted web app reach your local Ollama, start it with an allowed origin, e.g. `OLLAMA_ORIGINS=https://tasern-4.vercel.app ollama serve` (or `http://localhost:3333` for local dev). The desktop build manages this for you.
 
-Environment variables are documented in `.env.example` (admin password, optional Anthropic fallback key, local LLM URL/model, WalletConnect project ID).
+Environment variables are documented in `.env.example` (admin password, optional Anthropic fallback key, local LLM URL/model, the wallet switch and WalletConnect project ID).
 
 ## Project structure
 

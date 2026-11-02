@@ -1,16 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
+import dynamic from "next/dynamic";
 import { StoryInterface } from "@/components/StoryInterface";
 import { IntroSequence } from "@/components/IntroSequence";
 import OllamaSetup from "@/components/OllamaSetup";
 import { useTauri } from "@/hooks/useTauri";
 import { useLocalOllama } from "@/hooks/useLocalOllama";
 import { useStoryStore } from "@/state/storyStore";
+import { WALLET_ENABLED } from "@/lib/wallet/flag";
 
-// Wallet UI is web-only; the desktop build has no wagmi provider mounted.
-const IS_TAURI = process.env.NEXT_PUBLIC_TAURI_BUILD === "true";
+// Imported only when the wallet is enabled, which it is in neither build by default.
+const WalletButton = WALLET_ENABLED ? dynamic(() => import("@/lib/wallet/WalletButton")) : null;
 
 export default function Home() {
   const [showIntro, setShowIntro] = useState(true);
@@ -52,13 +53,7 @@ export default function Home() {
               </span>
             )}
           </div>
-          {!IS_TAURI && (
-            <ConnectButton
-              accountStatus="address"
-              chainStatus="icon"
-              showBalance={false}
-            />
-          )}
+          {WalletButton && <WalletButton />}
         </div>
       </header>
 

@@ -25,7 +25,5 @@ export default defineConfig({
   test: {
     include: ["src/**/*.test.{ts,tsx}"],
     environment: "node",
-    // The desktop flavour swaps out wallet hooks, so screens render without providers.
-    env: { NEXT_PUBLIC_TAURI_BUILD: "true" },
   },
 });
