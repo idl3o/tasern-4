@@ -165,6 +165,23 @@ Here is the story:
 
 export const MEMORY_EXTRACTION_SYSTEM = "You are a story analyst. Extract facts from the story as JSON. Respond ONLY with valid JSON.";
 
+// Soft, escalating steer toward a chapter climax as the context window fills.
+// `intensity` 0..1 (how close to the close threshold) sharpens the language.
+export function buildWindDownPrompt(intensity: number): string {
+  if (intensity >= 0.75) {
+    return `\n\nThis chapter is reaching its climax NOW. Bring the current threads to a head — deliver the decisive, consequential moment this arc has been building toward, and let the scene resolve toward a natural stopping point. Make it land.`;
+  }
+  return `\n\nThe chapter is drawing toward its close. Begin converging the threads and raising the stakes toward a climax; let suggested moves point toward resolution rather than opening new long detours.`;
+}
+
+// Opens a new chapter in a fresh context window, carrying the story forward via the
+// summary (which is already in the system prompt as STORY SO FAR).
+export function buildChapterOpeningPrompt(chapter: number): string {
+  return `A new chapter of the traveller's saga begins: Chapter ${chapter}.
+Some time has passed. Drawing on the story so far and the current state of Tasern, open a fresh scene that moves the traveller forward — a new place, a new tension, or a consequence of what came before. Do not recap mechanically; simply continue the tale in a new beat.
+Write 2-3 evocative paragraphs and end by offering suggested moves per the protocol.`;
+}
+
 export const WORLD_DREAMER_SYSTEM =
   "You are the Chronicler of Tasern, recording how the living world shifts between a traveller's visits. Respond ONLY with 1-2 lines, each of the form [WORLD_EVENT: a single vivid sentence].";
 

@@ -76,6 +76,12 @@ export interface FakeOllama {
   hold(): () => void;
   /** Narrator replies the client cancelled mid-stream. */
   cancelled: number;
+  /** prompt_eval_count reported when a narrator reply ends; raise it to fill the budget. */
+  promptTokens: number;
+  /** History messages each narrator request carried (excluding system and the prompt). */
+  histories: number[];
+  /** Memory-extraction requests seen. */
+  extractions: number;
 }
 
 const NARRATION_CHOICES =
@@ -91,7 +97,12 @@ function narratorReply(system: string, last: string, turn: number): string {
   return `Narration ${turn}: the drain's wind settles around you.\n${NARRATION_CHOICES}`;
 }
 
-function ndjson(text: string, gate: Promise<void> | null, signal: AbortSignal | null | undefined): ReadableStream<Uint8Array> {
+function ndjson(
+  text: string,
+  gate: Promise<void> | null,
+  signal: AbortSignal | null | undefined,
+  promptTokens: number
+): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const line = (o: object) => encoder.encode(JSON.stringify(o) + "\n");
   const half = Math.ceil(text.length / 2);
@@ -103,7 +114,7 @@ function ndjson(text: string, gate: Promise<void> | null, signal: AbortSignal | 
         if (signal?.aborted) return controller.error(new DOMException("aborted", "AbortError"));
       }
       controller.enqueue(line({ message: { role: "assistant", content: text.slice(half) }, done: false }));
-      controller.enqueue(line({ done: true, done_reason: "stop", prompt_eval_count: 120, eval_count: 40, load_duration: 0 }));
+      controller.enqueue(line({ done: true, done_reason: "stop", prompt_eval_count: promptTokens, eval_count: 40, load_duration: 0 }));
       controller.close();
     },
   });
@@ -117,6 +128,9 @@ export function createFakeOllama(models: string[] = ["gemma4:latest", "llama3.2:
     turns: [],
     management: [],
     cancelled: 0,
+    promptTokens: 120,
+    histories: [],
+    extractions: 0,
     hold() {
       let release = () => undefined as void;
       gate = new Promise<void>((resolve) => (release = resolve));
@@ -142,11 +156,15 @@ export function createFakeOllama(models: string[] = ["gemma4:latest", "llama3.2:
           const system = messages.find((m) => m.role === "system")?.content ?? "";
           const last = messages.at(-1)?.content ?? "";
           const narrator = !system.includes("story analyst") && !system.includes("Chronicler");
-          if (narrator) fake.turns.push(last);
+          if (narrator) {
+            fake.turns.push(last);
+            fake.histories.push(messages.length - 2);
+          }
+          if (system.includes("story analyst")) fake.extractions++;
           const held = narrator ? gate : null;
           if (narrator) gate = null;
           if (held) init?.signal?.addEventListener("abort", () => fake.cancelled++);
-          return new Response(ndjson(narratorReply(system, last, fake.turns.length), held, init?.signal));
+          return new Response(ndjson(narratorReply(system, last, fake.turns.length), held, init?.signal, fake.promptTokens));
         }
         case "/api/pull": {
           const lines = [

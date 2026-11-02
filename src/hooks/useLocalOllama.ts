@@ -7,10 +7,12 @@ import { rankModels, selectModel } from "@/lib/ollama/models";
 import { createHttpTransport } from "@/lib/ollama/transport";
 import { createTauriTransport } from "@/lib/ollama/transportTauri";
 import { isTauri } from "@/lib/platform";
+import { CONTEXT_TOKENS } from "@/lib/chapters";
 import type { ChatMessage, ModelName } from "@/lib/ollama/types";
 import { useOllamaStore } from "@/state/ollamaStore";
 
-const NUM_CTX = 8192;
+// The chapter budget is measured against this window (see lib/chapters.ts).
+const NUM_CTX = CONTEXT_TOKENS;
 // Long enough that a player reading between turns doesn't pay a cold reload
 // (9-28s measured for gemma4/gpt-oss on an RX 7800 XT); Ollama's default is 5m.
 const KEEP_ALIVE = "30m";

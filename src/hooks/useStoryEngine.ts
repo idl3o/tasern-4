@@ -9,7 +9,7 @@ import {
   type InventoryItem,
 } from "@/state/storyStore";
 import { useWebLLM } from "./useWebLLM";
-import { useLocalOllama } from "./useLocalOllama";
+import { useLocalOllama, type GenStats } from "./useLocalOllama";
 import { useWalletContext } from "./useWalletContext";
 import {
   composeSystemPrompt,
@@ -17,8 +17,18 @@ import {
   MEMORY_EXTRACTION_PROMPT,
   MEMORY_EXTRACTION_SYSTEM,
   FATE_INTRUSION_PROMPT,
+  buildWindDownPrompt,
+  buildChapterOpeningPrompt,
   type CharacterContext,
 } from "@/lib/prompt";
+import {
+  CONTEXT_TOKENS,
+  WIND_DOWN_RATIO,
+  CHAPTER_CLOSE_RATIO,
+  estimateTokens,
+  historySinceLastChapter,
+  currentChapter,
+} from "@/lib/chapters";
 import type { CharacterChoices } from "@/components/CharacterCreation";
 import { useWorldStore } from "@/state/worldStore";
 import { runWorldDreamer, type DreamerGenerate } from "@/lib/world/dreamer";
@@ -158,6 +168,9 @@ export function useStoryEngine() {
   const [pendingRoll, setPendingRoll] = useState<PendingRoll | null>(null);
   const [choices, setChoices] = useState<SuggestedMove[]>([]);
   const [llmSource, setLlmSource] = useState<"local-ollama" | "webllm" | null>(null);
+  // Estimated/measured prompt tokens of the last generation, for chapter budgeting.
+  const [contextTokens, setContextTokens] = useState(0);
+  const contextTokensRef = useRef(0);
   const characterRef = useRef<CharacterContext | null>(null);
   const extractingRef = useRef(false);
   // The narrator reply in flight, as its cancel handle: one at a time, and Exit
@@ -240,6 +253,11 @@ export function useStoryEngine() {
     });
   }, [getActiveStory, walletPromptContext]);
 
+  const setContext = useCallback((n: number) => {
+    contextTokensRef.current = n;
+    setContextTokens(n);
+  }, []);
+
   const generateWithLocalOllama = useCallback(
     async (
       prompt: string,
@@ -251,7 +269,10 @@ export function useStoryEngine() {
       try {
         const historyForLLM = history.map((m) => ({ role: m.role, content: m.content }));
         let fullContent = "";
-        for await (const chunk of localOllamaGenerate(prompt, systemPrompt, historyForLLM, undefined, signal)) {
+        const onStats = (stats: GenStats) => {
+          if (stats.promptTokens) setContext(stats.promptTokens); // real count beats the estimate
+        };
+        for await (const chunk of localOllamaGenerate(prompt, systemPrompt, historyForLLM, onStats, signal)) {
           fullContent += chunk;
           setMessages((prev) =>
             prev.map((msg) => (msg.id === messageId ? { ...msg, content: fullContent } : msg))
@@ -264,7 +285,7 @@ export function useStoryEngine() {
         return null;
       }
     },
-    [localOllamaGenerate]
+    [localOllamaGenerate, setContext]
   );
 
   const generateWithWebLLM = useCallback(
@@ -276,11 +297,8 @@ export function useStoryEngine() {
       signal: AbortSignal
     ): Promise<string | null> => {
       try {
-        // Trim history when memory exists
-        const story = getActiveStory();
-        const hasMemory = !!story?.memory?.summary;
-        const trimmed = hasMemory && history.length > 20 ? history.slice(-20) : history;
-        const historyForLLM = trimmed.map((m) => ({ role: m.role, content: m.content }));
+        // History is already scoped to the current chapter by smartGenerate.
+        const historyForLLM = history.map((m) => ({ role: m.role, content: m.content }));
 
         let fullContent = "";
         for await (const chunk of webLLMGenerate(prompt, systemPrompt, historyForLLM)) {
@@ -297,7 +315,7 @@ export function useStoryEngine() {
         return null;
       }
     },
-    [webLLMGenerate, getActiveStory]
+    [webLLMGenerate]
   );
 
   // Returns the final narrator content (or a fallback message when no AI is available),
@@ -305,18 +323,20 @@ export function useStoryEngine() {
   const smartGenerate = useCallback(
     async (prompt: string, history: StoryMessage[], messageId: string, signal: AbortSignal): Promise<string | null> => {
       const systemPrompt = buildSystemPrompt();
-      if (process.env.NODE_ENV !== "production") {
-        console.log("[StoryEngine] system prompt length:", systemPrompt.length);
-      }
+      // Scope history to the current chapter: bounds context and resets pressure each
+      // chapter. Cross-chapter continuity rides in the memory summary.
+      const scoped = historySinceLastChapter(history);
+      // Baseline estimate; Ollama overrides with the real prompt-token count via onStats.
+      setContext(estimateTokens(systemPrompt, prompt, ...scoped.map((m) => m.content)));
 
       if (localOllamaAvailable) {
-        const content = await generateWithLocalOllama(prompt, systemPrompt, history, messageId, signal);
+        const content = await generateWithLocalOllama(prompt, systemPrompt, scoped, messageId, signal);
         if (content !== null) return content;
       }
       if (signal.aborted) return null;
 
       if (webLLMReady) {
-        const content = await generateWithWebLLM(prompt, systemPrompt, history, messageId, signal);
+        const content = await generateWithWebLLM(prompt, systemPrompt, scoped, messageId, signal);
         if (content !== null) return content;
       }
       if (signal.aborted) return null;
@@ -327,16 +347,30 @@ export function useStoryEngine() {
       );
       return fallback;
     },
-    [buildSystemPrompt, localOllamaAvailable, generateWithLocalOllama, webLLMReady, generateWithWebLLM]
+    [buildSystemPrompt, setContext, localOllamaAvailable, generateWithLocalOllama, webLLMReady, generateWithWebLLM]
   );
 
-  const extractMemory = useCallback(
-    async (msgs: StoryMessage[]) => {
-      const story = getActiveStory();
-      if (!story || extractingRef.current) return;
+  // Wind-down suffix appended to action prompts as the context window fills.
+  const windDownSuffix = useCallback((): string => {
+    const ratio = contextTokensRef.current / CONTEXT_TOKENS;
+    if (ratio < WIND_DOWN_RATIO) return "";
+    const intensity = Math.min(1, (ratio - WIND_DOWN_RATIO) / (CHAPTER_CLOSE_RATIO - WIND_DOWN_RATIO));
+    return buildWindDownPrompt(intensity);
+  }, []);
 
-      const sinceLastExtraction = msgs.length - story.messageCountAtLastExtraction;
-      if (sinceLastExtraction < MEMORY_EXTRACTION_THRESHOLD && story.messageCountAtLastExtraction > 0) return;
+  const overBudget = useCallback(() => contextTokensRef.current >= CONTEXT_TOKENS * CHAPTER_CLOSE_RATIO, []);
+
+  const extractMemory = useCallback(
+    async (msgs: StoryMessage[], opts?: { force?: boolean }) => {
+      const story = getActiveStory();
+      if (!story) return;
+      // `force` (chapter close) bypasses the periodic threshold and the in-flight guard
+      // so the chapter's climax is captured before the raw history is reset.
+      if (!opts?.force) {
+        if (extractingRef.current) return;
+        const sinceLastExtraction = msgs.length - story.messageCountAtLastExtraction;
+        if (sinceLastExtraction < MEMORY_EXTRACTION_THRESHOLD && story.messageCountAtLastExtraction > 0) return;
+      }
 
       extractingRef.current = true;
       console.log("[Memory] Extracting story memory...");
@@ -558,6 +592,54 @@ export function useStoryEngine() {
     [checkForItemSpellTags, saveMessages, extractMemory, getActiveStory, setOpenTurn]
   );
 
+  // Close the current chapter and open the next in a fresh context window. Triggered
+  // when the token budget crosses the close threshold after a soft wind-down. Runs as
+  // a generation like any turn, so Exit cancels it and it can't overlap another.
+  const closeChapter = useCallback(async () => {
+    if (generationRef.current) return;
+    const generation = new AbortController();
+    generationRef.current = generation;
+    setIsLoading(true);
+    try {
+      const msgs = getActiveStory()?.messages ?? [];
+      // Freeze the chapter's climax into the summary before the raw history resets.
+      await extractMemory(msgs, { force: true });
+      if (generation.signal.aborted) return;
+
+      const chapterNo = currentChapter(msgs) + 1;
+      const divider: StoryMessage = {
+        id: safeUUID(),
+        role: "system",
+        content: `Chapter ${chapterNo}`,
+        timestamp: Date.now(),
+        divider: chapterNo,
+      };
+      const withDivider = [...msgs, divider];
+      saveMessages(withDivider);
+
+      // The world turns between chapters.
+      worldTick(getActiveStory()?.memory?.affinityStrengths ?? {});
+      void dreamWorld();
+
+      // Open the new chapter: history since the divider is empty, so this generates
+      // in a fresh window with the summary carrying continuity.
+      const narratorId = safeUUID();
+      const opening: StoryMessage[] = [
+        ...withDivider,
+        { id: narratorId, role: "narrator", content: "", timestamp: Date.now() },
+      ];
+      setMessages(opening);
+      const content = await smartGenerate(buildChapterOpeningPrompt(chapterNo), withDivider, narratorId, generation.signal);
+      if (content === null) return; // the player left mid-reply
+      finalizeAfterGeneration(opening.map((m) => (m.id === narratorId ? { ...m, content } : m)));
+    } finally {
+      if (generationRef.current === generation) {
+        generationRef.current = null;
+        setIsLoading(false);
+      }
+    }
+  }, [getActiveStory, extractMemory, saveMessages, worldTick, dreamWorld, smartGenerate, finalizeAfterGeneration]);
+
   const startStory = useCallback(
     async (choices: CharacterChoices) => {
       if (generationRef.current) return;
@@ -724,6 +806,7 @@ Write 2-4 paragraphs continuing the narrative.`;
       if (fate) {
         prompt += FATE_INTRUSION_PROMPT;
       }
+      prompt += windDownSuffix();
 
       try {
         const content = await smartGenerate(prompt, priorHistory, narratorId, generation.signal);
@@ -737,8 +820,9 @@ Write 2-4 paragraphs continuing the narrative.`;
           setIsLoading(false);
         }
       }
+      if (overBudget()) void closeChapter();
     },
-    [messages, reinforceAffinity, smartGenerate, finalizeAfterGeneration]
+    [messages, reinforceAffinity, smartGenerate, finalizeAfterGeneration, windDownSuffix, overBudget, closeChapter]
   );
 
   // Called after the player rolls the d20 that a [ROLL_REQUIRED] asked for.
@@ -778,7 +862,7 @@ Write 2-4 paragraphs continuing the narrative.`;
       setIsLoading(true);
 
       const prompt = `The fate roll has been cast.${buildDicePrompt(result)}
-Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
+Write 2-4 paragraphs. End by offering suggested moves per the protocol.${windDownSuffix()}`;
 
       try {
         const content = await smartGenerate(prompt, priorHistory, narratorId, generation.signal);
@@ -792,8 +876,9 @@ Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
           setIsLoading(false);
         }
       }
+      if (overBudget()) void closeChapter();
     },
-    [messages, pendingRoll, reinforceAffinity, smartGenerate, finalizeAfterGeneration]
+    [messages, pendingRoll, reinforceAffinity, smartGenerate, finalizeAfterGeneration, windDownSuffix, overBudget, closeChapter]
   );
 
   // Player-initiated ("declare an attempt"): the player commits an action + approach
@@ -838,7 +923,7 @@ Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
       setIsLoading(true);
 
       const prompt = `The traveler deliberately attempts: "${action}", meeting the moment through ${approach}.${buildDicePrompt(result)}
-Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
+Write 2-4 paragraphs. End by offering suggested moves per the protocol.${windDownSuffix()}`;
 
       try {
         const content = await smartGenerate(prompt, priorHistory, narratorId, generation.signal);
@@ -852,8 +937,9 @@ Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
           setIsLoading(false);
         }
       }
+      if (overBudget()) void closeChapter();
     },
-    [messages, reinforceAffinity, getActiveStory, smartGenerate, finalizeAfterGeneration]
+    [messages, reinforceAffinity, getActiveStory, smartGenerate, finalizeAfterGeneration, windDownSuffix, overBudget, closeChapter]
   );
 
   const resetSession = useCallback(() => {
@@ -864,11 +950,12 @@ Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
     setPendingRoll(null);
     setChoices([]);
     setLlmSource(null);
+    setContext(0);
     characterRef.current = null;
     selectedApproachRef.current = null;
     calmTurnsRef.current = 0;
     fateThisTurnRef.current = false;
-  }, []);
+  }, [setContext]);
 
   return {
     messages,
@@ -876,6 +963,8 @@ Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
     pendingRoll,
     choices,
     llmSource,
+    chapter: currentChapter(messages),
+    winding: contextTokens / CONTEXT_TOKENS >= WIND_DOWN_RATIO,
     startStory,
     continueStory,
     sendAction,

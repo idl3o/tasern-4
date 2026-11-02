@@ -55,6 +55,7 @@ export interface StoryMessage {
   content: string;
   timestamp: number;
   diceRoll?: number;
+  divider?: number; // set on a chapter-divider system message (the new chapter number)
 }
 
 export interface InventoryItem {
