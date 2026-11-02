@@ -18,6 +18,7 @@ import { WebLLMSetup } from "./WebLLMSetup";
 import { CharacterCreation, type CharacterChoices } from "./CharacterCreation";
 import { ChroniclePanel } from "./ChroniclePanel";
 import { useStoryStore, type SavedStory } from "@/state/storyStore";
+import { describeOllamaError } from "@/lib/ollama/errors";
 
 function formatTimeAgo(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -58,7 +59,11 @@ export function StoryInterface() {
   const {
     available: localOllamaAvailable,
     isChecking: checkingLocalOllama,
+    isRunning: ollamaRunning,
+    models: ollamaModels,
     selectedModel: localOllamaModel,
+    chooseModel: chooseOllamaModel,
+    error: ollamaError,
   } = useLocalOllama();
 
   const {
@@ -209,6 +214,8 @@ export function StoryInterface() {
   }
 
   const hasAnyAI = localOllamaAvailable || webLLMReady;
+  // Ollama must allow the origin this page is actually served from.
+  const pageOrigin = typeof window === "undefined" ? "https://tasern-4.vercel.app" : window.location.origin;
   const isLoadingWebLLM = webLLMStatus === "downloading" || webLLMStatus === "loading";
   const isCheckingAI = checkingLocalOllama;
 
@@ -236,7 +243,29 @@ export function StoryInterface() {
             ) : (
               <>
                 {localOllamaAvailable && (
-                  <div className="text-green-400">Local Ollama Ready ({localOllamaModel})</div>
+                  <div className="text-green-400">
+                    Local Ollama Ready{" "}
+                    {ollamaModels.length > 1 ? (
+                      <select
+                        aria-label="Ollama model"
+                        value={localOllamaModel ?? ""}
+                        onChange={(e) => chooseOllamaModel(e.target.value)}
+                        className="ml-1 bg-void border border-gold/30 rounded px-1 text-parchment"
+                      >
+                        {ollamaModels.map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      `(${localOllamaModel})`
+                    )}
+                  </div>
+                )}
+                {!localOllamaAvailable && ollamaRunning && (
+                  <div className="text-gold">Ollama is running but has no chat models. Pull one, e.g. ollama pull llama3.2</div>
+                )}
+                {!localOllamaAvailable && ollamaError && ollamaError.kind !== "unreachable" && (
+                  <div className="text-gold">{describeOllamaError(ollamaError)}</div>
                 )}
                 {webLLMReady ? (
                   <div className="text-green-400">Browser AI Ready</div>
@@ -279,14 +308,22 @@ export function StoryInterface() {
                       <li>
                         Run: <code className="bg-gray-800 px-1 rounded text-green-400">ollama pull llama3.2</code>
                       </li>
-                      <li>
-                        Start with CORS enabled:
-                        <div className="mt-1 p-2 bg-gray-800 rounded font-mono text-green-400 select-all text-[10px]">
-                          {typeof window !== "undefined" && navigator.platform?.includes("Win")
-                            ? "set OLLAMA_ORIGINS=https://tasern-4.vercel.app && ollama serve"
-                            : "OLLAMA_ORIGINS=https://tasern-4.vercel.app ollama serve"}
-                        </div>
-                      </li>
+                      {typeof window !== "undefined" && navigator.platform?.includes("Win") ? (
+                        <li>
+                          Allow this site: quit Ollama from the system tray, run
+                          <div className="mt-1 p-2 bg-gray-800 rounded font-mono text-green-400 select-all text-[10px]">
+                            setx OLLAMA_ORIGINS {pageOrigin}
+                          </div>
+                          then start Ollama again from the Start menu
+                        </li>
+                      ) : (
+                        <li>
+                          Start with this site allowed:
+                          <div className="mt-1 p-2 bg-gray-800 rounded font-mono text-green-400 select-all text-[10px]">
+                            OLLAMA_ORIGINS={pageOrigin} ollama serve
+                          </div>
+                        </li>
+                      )}
                       <li>Refresh this page</li>
                     </ol>
                   </div>

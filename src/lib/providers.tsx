@@ -7,6 +7,7 @@ import { config } from "./wagmi";
 import { useEffect, useState } from "react";
 import { useStoryStore } from "@/state/storyStore";
 import { useWebLLMStore } from "@/state/webllmStore";
+import { useOllamaStore } from "@/state/ollamaStore";
 import { useWorldStore } from "@/state/worldStore";
 
 import "@rainbow-me/rainbowkit/styles.css";
@@ -24,6 +25,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     useStoryStore.persist.rehydrate();
     useWebLLMStore.persist.rehydrate();
     useWorldStore.persist.rehydrate();
+    useOllamaStore.persist.rehydrate();
   }, []);
 
   if (IS_TAURI) {
