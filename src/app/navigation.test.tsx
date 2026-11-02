@@ -295,3 +295,46 @@ describe("story view", () => {
     await screen.findByText(/Narration 2/); // the failed turn never reached Ollama
   });
 });
+
+describe("chapters", () => {
+  it("C1: near the budget the narrator winds down, then a new chapter opens in a fresh window", async () => {
+    await toStartScreen();
+    await beginStory();
+    expect(screen.getByText(/^Chapter 1$/)).toBeTruthy();
+
+    fake.promptTokens = 6_000; // 73% of the 8192-token window: past the wind-down mark
+    typeAction("I press on");
+    await screen.findByText(/Narration 2/);
+    await screen.findByText(/the chapter draws toward its close/i);
+
+    fake.promptTokens = 7_200; // 88%: past the close mark
+    typeAction("I press on again");
+    await screen.findByText(/Narration 3/);
+    expect(fake.turns[2]).toMatch(/drawing toward its close/i); // the steer reached the narrator
+    fake.promptTokens = 120;
+
+    await screen.findByText(/Chapter 2 ❖/);
+    await screen.findByText(/Narration 4/);
+    expect(fake.extractions).toBeGreaterThan(0); // the climax was summarised first
+    expect(fake.turns[3]).toMatch(/a new chapter of the traveller's saga begins: chapter 2/i);
+    expect(fake.histories[3]).toBe(0); // a fresh window: nothing from before the divider
+    expect(screen.getByText(/^Chapter 2$/)).toBeTruthy();
+  }, 20_000);
+
+  it("C2: Continue keeps the chapter, and the next turn sees only this chapter's history", async () => {
+    await toStartScreen();
+    await beginStory();
+    fake.promptTokens = 7_200;
+    typeAction("I press on");
+    await screen.findByText(/Narration 2/);
+    fake.promptTokens = 120;
+    await screen.findByText(/Narration 3/); // the Chapter 2 opening
+    click(/exit story/i);
+    await screen.findByText(/saved stories/i);
+    click(/^continue$/i);
+    await screen.findByText(/^Chapter 2$/);
+    fireEvent.click(await findButton(/look around/i));
+    await screen.findByText(/Narration 4/);
+    expect(fake.histories[3]).toBe(1); // just the chapter opening, not the whole saga
+  }, 20_000);
+});
