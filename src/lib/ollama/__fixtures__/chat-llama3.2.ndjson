@@ -1,0 +1,13 @@
+{"model":"llama3.2","created_at":"2026-11-02T13:09:57.821729Z","message":{"role":"assistant","content":"\""},"done":false}
+{"model":"llama3.2","created_at":"2026-11-02T13:09:57.8318028Z","message":{"role":"assistant","content":"Welcome"},"done":false}
+{"model":"llama3.2","created_at":"2026-11-02T13:09:57.8435951Z","message":{"role":"assistant","content":","},"done":false}
+{"model":"llama3.2","created_at":"2026-11-02T13:09:57.853015Z","message":{"role":"assistant","content":" weary"},"done":false}
+{"model":"llama3.2","created_at":"2026-11-02T13:09:57.8636896Z","message":{"role":"assistant","content":" traveller"},"done":false}
+{"model":"llama3.2","created_at":"2026-11-02T13:09:57.8727027Z","message":{"role":"assistant","content":","},"done":false}
+{"model":"llama3.2","created_at":"2026-11-02T13:09:57.8830039Z","message":{"role":"assistant","content":" may"},"done":false}
+{"model":"llama3.2","created_at":"2026-11-02T13:09:57.8933758Z","message":{"role":"assistant","content":" your"},"done":false}
+{"model":"llama3.2","created_at":"2026-11-02T13:09:57.903789Z","message":{"role":"assistant","content":" journey"},"done":false}
+{"model":"llama3.2","created_at":"2026-11-02T13:09:57.9123221Z","message":{"role":"assistant","content":" be"},"done":false}
+{"model":"llama3.2","created_at":"2026-11-02T13:09:57.9216867Z","message":{"role":"assistant","content":" filled"},"done":false}
+{"model":"llama3.2","created_at":"2026-11-02T13:09:57.9305333Z","message":{"role":"assistant","content":" with"},"done":false}
+{"model":"llama3.2","created_at":"2026-11-02T13:09:57.9305333Z","message":{"role":"assistant","content":""},"done":true,"done_reason":"length","total_duration":5599511100,"load_duration":5401183400,"prompt_eval_count":34,"prompt_eval_cached_count":0,"prompt_eval_duration":87083000,"eval_count":12,"eval_duration":108832000}
