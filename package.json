@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test": "vitest run",
     "tauri": "tauri",
     "tauri:dev": "cross-env TAURI_BUILD=true tauri dev",
     "tauri:build": "cross-env TAURI_BUILD=true tauri build"
@@ -35,6 +36,7 @@
     "eslint-config-next": "14.2.21",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.4.0",
-    "typescript": "^5.3.0"
+    "typescript": "^5.3.0",
+    "vitest": "^4.1.12"
   }
 }
