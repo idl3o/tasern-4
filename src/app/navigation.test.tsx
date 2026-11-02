@@ -134,14 +134,15 @@ describe("start screen", () => {
     await waitFor(() => expect(screen.queryByText(/saved stories/i)).toBeNull());
   });
 
-  // Known bug: Skip saves hasDeclinedWebLLM and nothing in the UI clears it. Remove .fails once fixed.
-  it.fails("N13 (known bug): after skipping the browser AI, the player can still enable it later", async () => {
+  it("N13: after skipping the browser AI, the player can still enable it later", async () => {
     await toStartScreen();
     click(/enable local ai/i);
     await screen.findByText(/enable local ai\?/i);
     click(/^skip$/i);
     await screen.findByText(/welcome, traveler/i);
-    expect(screen.queryByRole("button", { name: /local ai|browser ai/i })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /enable local ai/i })).toBeNull(); // the offer is quieter
+    click(/enable browser ai/i);
+    await screen.findByText(/enable local ai\?/i);
   });
 });
 
@@ -163,12 +164,12 @@ describe("character creation", () => {
     expect(button(/^continue/i).disabled).toBe(false); // origin still chosen
   });
 
-  // Known bug: step 1 has no Back or Cancel; only finishing or reloading leaves creation. Remove .fails once fixed.
-  it.fails("N18 (known bug): creation can be abandoned from its first step", async () => {
+  it("N18: creation can be abandoned from its first step", async () => {
     await toStartScreen();
     click(/begin new story/i);
     await screen.findByPlaceholderText(/enter your name/i);
-    expect(screen.queryByRole("button", { name: /back|cancel/i })).not.toBeNull();
+    click(/^back$/i);
+    await screen.findByText(/welcome, traveler/i);
   });
 
   it("N19: Enter Tasern opens the story and streams the opening", async () => {
@@ -227,8 +228,7 @@ describe("story view", () => {
     expect(screen.queryByText(/Narration 2/)).not.toBeNull();
   });
 
-  // Known bug: continueStory clears choices and nothing re-derives them from the last reply. Remove .fails once fixed.
-  it.fails("N25b (known bug): Continue restores the last suggested moves", async () => {
+  it("N25b: Continue restores the last suggested moves", async () => {
     await toStartScreen();
     await beginStory();
     click(/exit story/i);
@@ -238,39 +238,48 @@ describe("story view", () => {
     expect(screen.queryByRole("button", { name: /look around/i })).not.toBeNull();
   });
 
-  // Known bug: resetSession leaves isGeneratingRef set, so startStory returns early. Remove .fails once fixed.
-  it.fails("N26 (known bug): exiting mid-reply and starting a new story still streams the new opening", async () => {
+  it("N26: exiting mid-reply and starting a new story still streams the new opening", async () => {
     await toStartScreen();
     const release = fake.hold();
     await createCharacter("First");
     await screen.findByText(/Narration 1/); // first half only: the reply is held
     click(/exit story/i);
+    expect(fake.cancelled).toBe(1); // Ollama stops generating the abandoned reply
     await createCharacter("Second");
     release();
-    // The second story's opening must reach Ollama; the engine's in-flight guard
-    // isn't cleared by Exit, so startStory returns before asking.
     await waitFor(() => expect(fake.turns.filter((t) => /begin an interactive story/i.test(t))).toHaveLength(2));
     await screen.findByText(/Narration 2/);
   }, 20_000);
 
-  // Known bug: the roll panel replaces the form that holds Exit Story. Remove .fails once fixed.
-  it.fails("N27 (known bug): Exit Story is reachable while a roll is pending", async () => {
+  it("N27: Exit Story works while a roll is pending, and Continue brings the roll back", async () => {
     await toStartScreen();
     await beginStory();
     typeAction("I roll for it across the ice");
     await screen.findByText(/the fates demand a roll/i);
-    expect(screen.queryByRole("button", { name: /exit story/i })).not.toBeNull();
+    click(/exit story/i);
+    await screen.findByText(/saved stories/i);
+    click(/^continue$/i);
+    await screen.findByText(/the fates demand a roll/i);
+    await findButton(/roll d20/i);
   });
 
-  // Known bug: the header reads the persisted activeStoryId; hasStarted resets on reload. Remove .fails once fixed.
-  it.fails("N28 (known bug): after a reload, the start screen header shows no story title", async () => {
+  it("N28: after a reload, the start screen header shows no story title", async () => {
     await toStartScreen();
     await beginStory();
-    cleanup(); // the window reloads; the stores (localStorage) survive
+    // A reload: memory is wiped and the store rehydrates from what is on disk. Resetting
+    // the store would also persist the empty state, so put the disk back afterwards.
+    const disk = Object.fromEntries(Object.entries(localStorage));
+    expect(Object.keys(disk)).toContain("tasern-stories");
+    cleanup();
+    useStoryStore.setState(initial.story, true);
+    localStorage.clear();
+    for (const [key, value] of Object.entries(disk)) localStorage.setItem(key, value);
+    await act(() => useStoryStore.persist.rehydrate());
     render(<Home />);
     click(/skip intro/i);
     await screen.findByText(/welcome, traveler/i);
     expect(within(screen.getByRole("banner")).queryByText(/wren's tale/i)).toBeNull();
+    expect(screen.getByText(/wren's tale/i)).toBeTruthy(); // the story itself survived
   });
 
   it("N29: Ollama going away mid-story is named, and play resumes once it is back", async () => {

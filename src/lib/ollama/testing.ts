@@ -74,6 +74,8 @@ export interface FakeOllama {
   management: Array<{ model: string; keep_alive: unknown }>;
   /** Make the next narrator reply stall after its first chunk until released. */
   hold(): () => void;
+  /** Narrator replies the client cancelled mid-stream. */
+  cancelled: number;
 }
 
 const NARRATION_CHOICES =
@@ -114,6 +116,7 @@ export function createFakeOllama(models: string[] = ["gemma4:latest", "llama3.2:
     models: [...models],
     turns: [],
     management: [],
+    cancelled: 0,
     hold() {
       let release = () => undefined as void;
       gate = new Promise<void>((resolve) => (release = resolve));
@@ -142,6 +145,7 @@ export function createFakeOllama(models: string[] = ["gemma4:latest", "llama3.2:
           if (narrator) fake.turns.push(last);
           const held = narrator ? gate : null;
           if (narrator) gate = null;
+          if (held) init?.signal?.addEventListener("abort", () => fake.cancelled++);
           return new Response(ndjson(narratorReply(system, last, fake.turns.length), held, init?.signal));
         }
         case "/api/pull": {

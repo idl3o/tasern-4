@@ -19,6 +19,7 @@ import { CharacterCreation, type CharacterChoices } from "./CharacterCreation";
 import { ChroniclePanel } from "./ChroniclePanel";
 import { useStoryStore, type SavedStory } from "@/state/storyStore";
 import { describeOllamaError } from "@/lib/ollama/errors";
+import { useWebLLMStore } from "@/state/webllmStore";
 
 function formatTimeAgo(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -194,12 +195,14 @@ export function StoryInterface() {
     });
   };
 
-  const shouldOfferWebLLM =
-    !hasDeclinedWebLLM &&
+  const webLLMAvailableToEnable =
     !webLLMReady &&
     webLLMStatus !== "unsupported" &&
     webLLMStatus !== "downloading" &&
     webLLMStatus !== "loading";
+  const shouldOfferWebLLM = !hasDeclinedWebLLM && webLLMAvailableToEnable;
+  // A decline only quiets the offer; the player can still change their mind.
+  const canReenableWebLLM = hasDeclinedWebLLM && webLLMAvailableToEnable;
 
   if (showWebLLMSetup) {
     return (
@@ -213,7 +216,7 @@ export function StoryInterface() {
   }
 
   if (showCharCreation) {
-    return <CharacterCreation onComplete={handleCharacterComplete} />;
+    return <CharacterCreation onComplete={handleCharacterComplete} onCancel={() => setShowCharCreation(false)} />;
   }
 
   const hasAnyAI = localOllamaAvailable || webLLMReady;
@@ -356,6 +359,17 @@ export function StoryInterface() {
                 }`}
               >
                 {!hasAnyAI ? "Download Browser AI (Recommended)" : "Enable Local AI (runs in browser)"}
+              </button>
+            )}
+            {canReenableWebLLM && (
+              <button
+                onClick={() => {
+                  useWebLLMStore.getState().setHasDeclined(false);
+                  setShowWebLLMSetup(true);
+                }}
+                className="block w-full text-xs text-parchment/40 hover:text-parchment/60"
+              >
+                Enable browser AI
               </button>
             )}
           </div>
@@ -659,6 +673,14 @@ export function StoryInterface() {
                 {isRolling ? <span className="text-2xl font-bold">{diceRoll}</span> : <>Roll d20</>}
               </button>
             )}
+            <button
+              type="button"
+              onClick={handleExitStory}
+              disabled={isRolling}
+              className="block mx-auto text-xs text-parchment/30 hover:text-parchment/60"
+            >
+              Exit Story
+            </button>
           </div>
         ) : attempt ? (
           <div className="max-w-4xl mx-auto text-center space-y-2">

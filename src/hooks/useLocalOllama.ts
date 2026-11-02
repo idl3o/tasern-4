@@ -156,7 +156,8 @@ export function useLocalOllama() {
       prompt: string,
       systemPrompt: string,
       history?: ReadonlyArray<{ role: string; content: string }>,
-      onStats?: (stats: GenStats) => void
+      onStats?: (stats: GenStats) => void,
+      signal?: AbortSignal
     ): AsyncGenerator<string, void, undefined> {
       if (!selected) throw new OllamaRequestError({ kind: "unreachable" });
       const request = {
@@ -169,7 +170,7 @@ export function useLocalOllama() {
       };
       let storyStarted = false;
       try {
-        for await (const event of getClient().chat(request)) {
+        for await (const event of getClient().chat(request, signal)) {
           if (event.type === "content") {
             if (!storyStarted) useOllamaStore.setState({ thinking: false });
             storyStarted = true;
@@ -182,7 +183,8 @@ export function useLocalOllama() {
         }
         useOllamaStore.setState({ lastFailure: null, warmed: selected.name });
       } catch (e) {
-        recordFailure(e);
+        // Cancelling (the player left the story) is not a failure to report.
+        if (!signal?.aborted) recordFailure(e);
         throw e;
       } finally {
         useOllamaStore.setState({ thinking: false });
