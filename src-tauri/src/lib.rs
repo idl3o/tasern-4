@@ -1,3 +1,5 @@
+mod ollama_proxy;
+
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -18,7 +20,7 @@ pub struct OllamaStatus {
 }
 
 /// Shared HTTP client (connection pooling) instead of one per request.
-fn http() -> &'static reqwest::Client {
+pub(crate) fn http() -> &'static reqwest::Client {
     static HTTP: OnceLock<reqwest::Client> = OnceLock::new();
     HTTP.get_or_init(reqwest::Client::new)
 }
@@ -182,6 +184,7 @@ async fn open_ollama_download() -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(ollama_proxy::Streams::default())
         .invoke_handler(tauri::generate_handler![
             check_ollama_installed,
             check_ollama_running,
@@ -191,6 +194,9 @@ pub fn run() {
             pull_model,
             get_ollama_status,
             open_ollama_download,
+            ollama_proxy::ollama_request,
+            ollama_proxy::ollama_stream,
+            ollama_proxy::ollama_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
