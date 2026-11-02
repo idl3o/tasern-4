@@ -5,9 +5,8 @@ import { formatUnits } from "viem";
 import type { WalletContext } from "@/lib/prompt";
 import type { WalletContextResult } from "./useWalletContext";
 
-// Web-only wallet context. Never called in the Tauri build (browser-extension /
-// WalletConnect wallets aren't usable inside the desktop webview), so wagmi's
-// providers are never mounted there — see providers.tsx and useWalletContext.ts.
+// Wallet context, used only when WALLET_ENABLED (see lib/wallet/flag.ts); otherwise
+// wagmi's providers are never mounted — see providers.tsx and useWalletContext.ts.
 export function useWebWallet(): WalletContextResult {
   const { address, isConnected } = useAccount();
   const { data: balance } = useBalance({

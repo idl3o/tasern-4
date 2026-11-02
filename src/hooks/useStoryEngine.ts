@@ -23,6 +23,8 @@ import type { CharacterChoices } from "@/components/CharacterCreation";
 import { useWorldStore } from "@/state/worldStore";
 import { runWorldDreamer, type DreamerGenerate } from "@/lib/world/dreamer";
 import { safeUUID } from "@/lib/id";
+import { describeOllamaError } from "@/lib/ollama/errors";
+import { useOllamaStore } from "@/state/ollamaStore";
 import {
   rollD20,
   resolveRoll,
@@ -37,6 +39,13 @@ import {
 // Re-export so existing consumers keep importing these from the engine.
 export { rollD20, getRollTier } from "@/lib/rolls";
 export type { RollTier } from "@/lib/rolls";
+
+/** Why no narrator answered, in words the player can act on. */
+function noNarratorReason(ollamaWasTried: boolean): string {
+  const { lastFailure, error } = useOllamaStore.getState();
+  const failure = ollamaWasTried ? lastFailure : error;
+  return failure ? describeOllamaError(failure) : "No AI is available: start Ollama, or enable the in-browser AI.";
+}
 
 const MEMORY_EXTRACTION_THRESHOLD = 10;
 
@@ -151,7 +160,9 @@ export function useStoryEngine() {
   const [llmSource, setLlmSource] = useState<"local-ollama" | "webllm" | null>(null);
   const characterRef = useRef<CharacterContext | null>(null);
   const extractingRef = useRef(false);
-  const isGeneratingRef = useRef(false);
+  // The narrator reply in flight, as its cancel handle: one at a time, and Exit
+  // aborts it so a story started next isn't blocked and Ollama stops generating.
+  const generationRef = useRef<AbortController | null>(null);
   // Approach of the in-flight action: set when the player clicks a labeled move,
   // null for a free-text action (whose approach the AI infers at roll time).
   const selectedApproachRef = useRef<Approach | null>(null);
@@ -171,6 +182,7 @@ export function useStoryEngine() {
     reinforceAffinity,
     updateTitle,
     setMessageCountAtLastExtraction,
+    setOpenTurn,
     addItem,
     removeItem,
     addSpell,
@@ -233,12 +245,13 @@ export function useStoryEngine() {
       prompt: string,
       systemPrompt: string,
       history: StoryMessage[],
-      messageId: string
+      messageId: string,
+      signal: AbortSignal
     ): Promise<string | null> => {
       try {
         const historyForLLM = history.map((m) => ({ role: m.role, content: m.content }));
         let fullContent = "";
-        for await (const chunk of localOllamaGenerate(prompt, systemPrompt, historyForLLM)) {
+        for await (const chunk of localOllamaGenerate(prompt, systemPrompt, historyForLLM, undefined, signal)) {
           fullContent += chunk;
           setMessages((prev) =>
             prev.map((msg) => (msg.id === messageId ? { ...msg, content: fullContent } : msg))
@@ -247,7 +260,7 @@ export function useStoryEngine() {
         setLlmSource("local-ollama");
         return fullContent;
       } catch (e) {
-        console.error("[Local Ollama] Generation failed:", e);
+        if (!signal.aborted) console.error("[Local Ollama] Generation failed:", e);
         return null;
       }
     },
@@ -259,7 +272,8 @@ export function useStoryEngine() {
       prompt: string,
       systemPrompt: string,
       history: StoryMessage[],
-      messageId: string
+      messageId: string,
+      signal: AbortSignal
     ): Promise<string | null> => {
       try {
         // Trim history when memory exists
@@ -270,6 +284,7 @@ export function useStoryEngine() {
 
         let fullContent = "";
         for await (const chunk of webLLMGenerate(prompt, systemPrompt, historyForLLM)) {
+          if (signal.aborted) return null;
           fullContent += chunk;
           setMessages((prev) =>
             prev.map((msg) => (msg.id === messageId ? { ...msg, content: fullContent } : msg))
@@ -285,26 +300,28 @@ export function useStoryEngine() {
     [webLLMGenerate, getActiveStory]
   );
 
-  // Returns the final narrator content (or a fallback message when no AI is available).
+  // Returns the final narrator content (or a fallback message when no AI is available),
+  // or null when the generation was aborted because the player left the story.
   const smartGenerate = useCallback(
-    async (prompt: string, history: StoryMessage[], messageId: string): Promise<string> => {
+    async (prompt: string, history: StoryMessage[], messageId: string, signal: AbortSignal): Promise<string | null> => {
       const systemPrompt = buildSystemPrompt();
       if (process.env.NODE_ENV !== "production") {
         console.log("[StoryEngine] system prompt length:", systemPrompt.length);
       }
 
       if (localOllamaAvailable) {
-        const content = await generateWithLocalOllama(prompt, systemPrompt, history, messageId);
+        const content = await generateWithLocalOllama(prompt, systemPrompt, history, messageId, signal);
         if (content !== null) return content;
       }
+      if (signal.aborted) return null;
 
       if (webLLMReady) {
-        const content = await generateWithWebLLM(prompt, systemPrompt, history, messageId);
+        const content = await generateWithWebLLM(prompt, systemPrompt, history, messageId, signal);
         if (content !== null) return content;
       }
+      if (signal.aborted) return null;
 
-      const fallback =
-        "The threads of fate tangle... something interferes with your arrival. (No AI available - please ensure Ollama is running)";
+      const fallback = `The threads of fate tangle... something interferes with your arrival. (${noNarratorReason(localOllamaAvailable)})`;
       setMessages((prev) =>
         prev.map((msg) => (msg.id === messageId ? { ...msg, content: fallback } : msg))
       );
@@ -525,6 +542,7 @@ export function useStoryEngine() {
       saveMessages(cleaned);
       setPendingRoll(pending);
       setChoices(moves);
+      setOpenTurn({ moves, roll: pending }); // restored by Continue
       // Track the calm streak for the fate backstop: a requested roll discharges the
       // tension (reset to 0); a roll-free turn lengthens the streak.
       if (pending) {
@@ -537,13 +555,14 @@ export function useStoryEngine() {
       fateThisTurnRef.current = false; // consumed for this turn
       extractMemory(cleaned);
     },
-    [checkForItemSpellTags, saveMessages, extractMemory, getActiveStory]
+    [checkForItemSpellTags, saveMessages, extractMemory, getActiveStory, setOpenTurn]
   );
 
   const startStory = useCallback(
     async (choices: CharacterChoices) => {
-      if (isGeneratingRef.current) return;
-      isGeneratingRef.current = true;
+      if (generationRef.current) return;
+      const generation = new AbortController();
+      generationRef.current = generation;
       createStory();
       setChoices([]);
       setPendingRoll(null);
@@ -616,12 +635,16 @@ Keep the opening to 2-3 paragraphs. Make it memorable.`;
       setMessages(initial);
 
       try {
-        const content = await smartGenerate(customPrompt, [], openingId);
+        const content = await smartGenerate(customPrompt, [], openingId, generation.signal);
+        if (content === null) return; // the player left mid-reply: the turn is abandoned
         const finalMessages = initial.map((m) => (m.id === openingId ? { ...m, content } : m));
         finalizeAfterGeneration(finalMessages);
       } finally {
-        setIsLoading(false);
-        isGeneratingRef.current = false;
+        // An exit may have superseded this generation; leave a newer one's state alone.
+        if (generationRef.current === generation) {
+          generationRef.current = null;
+          setIsLoading(false);
+        }
       }
     },
     [createStory, getActiveStory, updateMemory, reinforceBeliefs, reinforceAffinity, worldTick, addSpell, addItem, updateTitle, smartGenerate, finalizeAfterGeneration]
@@ -631,8 +654,8 @@ Keep the opening to 2-3 paragraphs. Make it memorable.`;
     (story: SavedStory) => {
       loadStory(story.id);
       setMessages(story.messages);
-      setChoices([]);
-      setPendingRoll(null);
+      setChoices(story.openTurn?.moves ?? []);
+      setPendingRoll(story.openTurn?.roll ?? null);
       selectedApproachRef.current = null;
       calmTurnsRef.current = 0;
       // Restore character context from memory if possible
@@ -657,8 +680,9 @@ Keep the opening to 2-3 paragraphs. Make it memorable.`;
   // rolled here — a roll only happens if the AI responds with [ROLL_REQUIRED].
   const sendAction = useCallback(
     async (action: string, approach: Approach | null) => {
-      if (isGeneratingRef.current) return;
-      isGeneratingRef.current = true;
+      if (generationRef.current) return;
+      const generation = new AbortController();
+      generationRef.current = generation;
 
       // Committing to a labeled approach reinforces that affinity (belief accumulation).
       selectedApproachRef.current = approach;
@@ -702,12 +726,16 @@ Write 2-4 paragraphs continuing the narrative.`;
       }
 
       try {
-        const content = await smartGenerate(prompt, priorHistory, narratorId);
+        const content = await smartGenerate(prompt, priorHistory, narratorId, generation.signal);
+        if (content === null) return; // the player left mid-reply: the turn is abandoned
         const finalMessages = newMessages.map((m) => (m.id === narratorId ? { ...m, content } : m));
         finalizeAfterGeneration(finalMessages);
       } finally {
-        setIsLoading(false);
-        isGeneratingRef.current = false;
+        // An exit may have superseded this generation; leave a newer one's state alone.
+        if (generationRef.current === generation) {
+          generationRef.current = null;
+          setIsLoading(false);
+        }
       }
     },
     [messages, reinforceAffinity, smartGenerate, finalizeAfterGeneration]
@@ -716,8 +744,9 @@ Write 2-4 paragraphs continuing the narrative.`;
   // Called after the player rolls the d20 that a [ROLL_REQUIRED] asked for.
   const resolveAIRoll = useCallback(
     async (rawRoll: number) => {
-      if (isGeneratingRef.current) return;
-      isGeneratingRef.current = true;
+      if (generationRef.current) return;
+      const generation = new AbortController();
+      generationRef.current = generation;
 
       const pending = pendingRoll;
       const approach = pending?.approach ?? null;
@@ -752,12 +781,16 @@ Write 2-4 paragraphs continuing the narrative.`;
 Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
 
       try {
-        const content = await smartGenerate(prompt, priorHistory, narratorId);
+        const content = await smartGenerate(prompt, priorHistory, narratorId, generation.signal);
+        if (content === null) return; // the player left mid-reply: the turn is abandoned
         const finalMessages = newMessages.map((m) => (m.id === narratorId ? { ...m, content } : m));
         finalizeAfterGeneration(finalMessages);
       } finally {
-        setIsLoading(false);
-        isGeneratingRef.current = false;
+        // An exit may have superseded this generation; leave a newer one's state alone.
+        if (generationRef.current === generation) {
+          generationRef.current = null;
+          setIsLoading(false);
+        }
       }
     },
     [messages, pendingRoll, reinforceAffinity, smartGenerate, finalizeAfterGeneration]
@@ -768,8 +801,9 @@ Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
   // resolve with the belief modifier, then the AI narrates the outcome at that tier.
   const attemptAction = useCallback(
     async (action: string, approach: Approach, rawRoll: number) => {
-      if (isGeneratingRef.current) return;
-      isGeneratingRef.current = true;
+      if (generationRef.current) return;
+      const generation = new AbortController();
+      generationRef.current = generation;
 
       // Committing to an approach reinforces it (belief accumulation); the modifier is
       // then read from the updated strength, so a deliberate attempt counts toward itself.
@@ -807,18 +841,24 @@ Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
 Write 2-4 paragraphs. End by offering suggested moves per the protocol.`;
 
       try {
-        const content = await smartGenerate(prompt, priorHistory, narratorId);
+        const content = await smartGenerate(prompt, priorHistory, narratorId, generation.signal);
+        if (content === null) return; // the player left mid-reply: the turn is abandoned
         const finalMessages = newMessages.map((m) => (m.id === narratorId ? { ...m, content } : m));
         finalizeAfterGeneration(finalMessages);
       } finally {
-        setIsLoading(false);
-        isGeneratingRef.current = false;
+        // An exit may have superseded this generation; leave a newer one's state alone.
+        if (generationRef.current === generation) {
+          generationRef.current = null;
+          setIsLoading(false);
+        }
       }
     },
     [messages, reinforceAffinity, getActiveStory, smartGenerate, finalizeAfterGeneration]
   );
 
   const resetSession = useCallback(() => {
+    generationRef.current?.abort();
+    generationRef.current = null;
     setMessages([]);
     setIsLoading(false);
     setPendingRoll(null);
