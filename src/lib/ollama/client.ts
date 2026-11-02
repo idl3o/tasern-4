@@ -1,13 +1,16 @@
 import { OllamaRequestError } from "./errors";
-import { parseChatLine, parseShow, parseTags } from "./parse";
-import type { OllamaTransport } from "./transport";
-import type { ChatEvent, ChatRequest, ModelDetails, ModelName } from "./types";
+import { sameModel } from "./models";
+import { parseChatLine, parsePullLine, parseShow, parseTags } from "./parse";
+import type { OllamaPath, OllamaTransport } from "./transport";
+import type { ChatEvent, ChatRequest, ModelDetails, ModelName, PullProgress } from "./types";
 
 export interface OllamaClientOptions {
   /** Abort a stream after this long without a line. Cold-loading a large model counts. */
   idleTimeoutMs?: number;
   /** Deadline for one non-streaming request. */
   requestTimeoutMs?: number;
+  /** Idle limit for a pull; verifying a multi-gigabyte layer is silent for a while. */
+  pullIdleTimeoutMs?: number;
 }
 
 export interface OllamaClient {
@@ -15,6 +18,13 @@ export interface OllamaClient {
   listModels(signal?: AbortSignal): Promise<ModelDetails[]>;
   /** Streams one chat turn as content, thinking and done events. */
   chat(request: ChatRequest, signal?: AbortSignal): AsyncGenerator<ChatEvent, void, undefined>;
+  /**
+   * Loads a model into memory without generating, so the first turn skips the load.
+   * `numCtx` must match the chat requests': a different context size reloads the model.
+   */
+  warm(model: ModelName, numCtx: number, keepAlive: string, signal?: AbortSignal): Promise<void>;
+  /** Downloads a model, yielding progress; throws if Ollama reports a failure. */
+  pull(model: string, signal?: AbortSignal): AsyncGenerator<PullProgress, void, undefined>;
 }
 
 /**
@@ -72,9 +82,24 @@ function chatBody(request: ChatRequest): object {
 
 export function createOllamaClient(
   transport: OllamaTransport,
-  { idleTimeoutMs = 120_000, requestTimeoutMs = 5_000 }: OllamaClientOptions = {}
+  { idleTimeoutMs = 120_000, requestTimeoutMs = 5_000, pullIdleTimeoutMs = 300_000 }: OllamaClientOptions = {}
 ): OllamaClient {
   const detailsCache = new Map<ModelName, ModelDetails>();
+
+  /** A streamed endpoint's lines, aborted as "stalled" after `idleMs` without one. */
+  async function* streamLines(path: OllamaPath, body: object, idleMs: number, outer?: AbortSignal) {
+    const dog = watchdog(idleMs, outer);
+    try {
+      for await (const line of transport.lines(path, body, dog.signal)) {
+        dog.kick();
+        yield line;
+      }
+    } catch (e) {
+      throw explain(e, dog, idleMs, outer);
+    } finally {
+      dog.dispose();
+    }
+  }
 
   async function request(path: "/api/tags" | "/api/show", body: object | undefined, outer?: AbortSignal) {
     const dog = watchdog(requestTimeoutMs, outer);
@@ -111,16 +136,26 @@ export function createOllamaClient(
     },
 
     async *chat(chatRequest, signal) {
-      const dog = watchdog(idleTimeoutMs, signal);
-      try {
-        for await (const line of transport.lines("/api/chat", chatBody(chatRequest), dog.signal)) {
-          dog.kick();
-          yield* parseChatLine(line, chatRequest.model);
-        }
-      } catch (e) {
-        throw explain(e, dog, idleTimeoutMs, signal);
-      } finally {
-        dog.dispose();
+      for await (const line of streamLines("/api/chat", chatBody(chatRequest), idleTimeoutMs, signal)) {
+        yield* parseChatLine(line, chatRequest.model);
+      }
+    },
+
+    async warm(model, numCtx, keepAlive, signal) {
+      // An empty message list loads the model and returns done_reason "load".
+      const body = { model, messages: [], keep_alive: keepAlive, options: { num_ctx: numCtx } };
+      for await (const line of streamLines("/api/chat", body, idleTimeoutMs, signal)) {
+        parseChatLine(line, model);
+      }
+    },
+
+    async *pull(model, signal) {
+      for await (const line of streamLines("/api/pull", { model, stream: true }, pullIdleTimeoutMs, signal)) {
+        yield parsePullLine(line, model);
+      }
+      // A re-pulled model may have new capabilities; "llama3.2" is cached as "llama3.2:latest".
+      for (const name of Array.from(detailsCache.keys())) {
+        if (sameModel(name, model)) detailsCache.delete(name);
       }
     },
   };

@@ -65,4 +65,24 @@ describe.skipIf(!live)("live Ollama", () => {
     const minutesLeft = loaded ? (Date.parse(loaded.expires_at) - Date.now()) / 60_000 : 0;
     expect(minutesLeft).toBeGreaterThan(25);
   }, 180_000);
+
+  it("warms a model so the first turn doesn't pay the load", async () => {
+    const model = models.find((m) => !m.capabilities?.has("thinking")) ?? models[0];
+    if (!model) return;
+    used.add(model.name);
+    await unload(model.name);
+    await client.warm(model.name, 2048, "5m");
+    const events = await collect(
+      client.chat({ model: model.name, messages: [{ role: "user", content: "Say hi." }], numCtx: 2048, keepAlive: "5m" })
+    );
+    const done = events.at(-1);
+    expect(done?.type === "done" ? done.loadMs : Infinity).toBeLessThan(500);
+  }, 180_000);
+
+  // Never pull a real name here: if the registry has a newer build, it downloads
+  // gigabytes. A name that can't exist exercises the HTTP 200 + error-line path.
+  it("reports pulling an unknown name as model-missing", async () => {
+    const pulling = collect(client.pull("tasern-test-no-such-model:0b"));
+    await expect(pulling).rejects.toMatchObject({ error: { kind: "model-missing" } });
+  }, 60_000);
 });

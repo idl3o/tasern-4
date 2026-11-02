@@ -33,6 +33,13 @@ export interface ChatRequest {
   think?: boolean;
 }
 
+/** One progress line from a streamed /api/pull; total/completed are bytes of the current layer. */
+export interface PullProgress {
+  status: string;
+  total: number | null;
+  completed: number | null;
+}
+
 /** One event from a streamed /api/chat response. */
 export type ChatEvent =
   | { type: "content"; text: string }

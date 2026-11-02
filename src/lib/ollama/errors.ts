@@ -53,7 +53,8 @@ export function classifyServerError(
   message: string,
   model: string | null
 ): OllamaError {
-  if (/model .*not found/i.test(message)) {
+  // "pull model manifest: file does not exist" is a pull of a name the registry lacks.
+  if (/model .*not found|pull model manifest: file does not exist/i.test(message)) {
     return { kind: "model-missing", model: model ?? message };
   }
   if (/out of memory|more system memory|insufficient memory|unable to allocate/i.test(message)) {

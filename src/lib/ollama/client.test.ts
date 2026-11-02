@@ -133,3 +133,59 @@ describe("listModels", () => {
     expect(await failure(client.listModels())).toEqual({ kind: "unreachable" });
   });
 });
+
+describe("warm", () => {
+  it("loads the model with an empty message list, the chat's num_ctx and keep_alive", async () => {
+    const transport = scriptedTransport({
+      lines: () => fromArray(['{"message":{"role":"assistant","content":""},"done":true,"done_reason":"load"}']),
+    });
+    await createOllamaClient(transport).warm("gemma4:latest" as ModelName, 8192, "30m");
+    expect(transport.calls[0]).toEqual({
+      path: "/api/chat",
+      body: { model: "gemma4:latest", messages: [], keep_alive: "30m", options: { num_ctx: 8192 } },
+    });
+  });
+
+  it("throws when the model can't be loaded", async () => {
+    const client = createOllamaClient(
+      scriptedTransport({ lines: () => fromArray(['{"error":"model requires more system memory (19 GiB)"}']) })
+    );
+    expect((await failure(client.warm("big:70b" as ModelName, 8192, "30m"))).kind).toBe("out-of-memory");
+  });
+});
+
+describe("pull", () => {
+  it("yields each progress line, with byte counts where Ollama gives them", async () => {
+    const client = createOllamaClient(scriptedTransport({ lines: () => fromArray(fixtureLines("pull-existing.ndjson")) }));
+    const progress = await collect(client.pull("llama3.2"));
+    expect(progress[0]).toEqual({ status: "pulling manifest", total: null, completed: null });
+    expect(progress.some((p) => p.total !== null && p.completed === p.total)).toBe(true);
+    expect(progress.at(-1)?.status).toBe("success");
+  });
+
+  it("treats Ollama's HTTP 200 plus error line for an unknown name as model-missing", async () => {
+    const lines = ['{"status":"pulling manifest"}', '{"error":"pull model manifest: file does not exist"}'];
+    const client = createOllamaClient(scriptedTransport({ lines: () => fromArray(lines) }));
+    expect(await failure(collect(client.pull("nope-not-real:1b")))).toEqual({
+      kind: "model-missing",
+      model: "nope-not-real:1b",
+    });
+  });
+
+  it("forgets cached capabilities for a re-pulled model, matching :latest", async () => {
+    let shows = 0;
+    const transport = scriptedTransport({
+      json: (path) => {
+        if (path === "/api/tags") return { models: [{ name: "llama3.2:latest" }] };
+        shows++;
+        return fixtureJson("show-llama3.2.json");
+      },
+      lines: () => fromArray(['{"status":"success"}']),
+    });
+    const client = createOllamaClient(transport);
+    await client.listModels();
+    await collect(client.pull("llama3.2"));
+    await client.listModels();
+    expect(shows).toBe(2);
+  });
+});

@@ -16,7 +16,7 @@ use tokio::task::AbortHandle;
 const OLLAMA_BASE: &str = "http://localhost:11434";
 
 /// Only these endpoints are reachable, so the proxy can't be pointed elsewhere.
-const ALLOWED_PATHS: &[&str] = &["/api/version", "/api/tags", "/api/show", "/api/chat"];
+const ALLOWED_PATHS: &[&str] = &["/api/version", "/api/tags", "/api/show", "/api/chat", "/api/pull"];
 
 fn endpoint(path: &str) -> Result<String, String> {
     if ALLOWED_PATHS.contains(&path) {

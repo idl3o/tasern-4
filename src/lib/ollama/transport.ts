@@ -7,7 +7,7 @@ import { classifyServerError, OllamaRequestError } from "./errors";
 import { ndjsonLines, readerChunks } from "./ndjson";
 import { parseErrorBody } from "./parse";
 
-export type OllamaPath = "/api/version" | "/api/tags" | "/api/show" | "/api/chat";
+export type OllamaPath = "/api/version" | "/api/tags" | "/api/show" | "/api/chat" | "/api/pull";
 
 export interface OllamaTransport {
   /** GET (no body) or POST a JSON endpoint; resolves the decoded body. */

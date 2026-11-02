@@ -1,7 +1,7 @@
 // The boundary: Ollama's JSON is untyped until one of these has narrowed it.
 
 import { classifyServerError, OllamaRequestError } from "./errors";
-import type { ChatEvent, ModelDetails, ModelName } from "./types";
+import type { ChatEvent, ModelDetails, ModelName, PullProgress } from "./types";
 
 type JsonObject = Record<string, unknown>;
 
@@ -54,11 +54,8 @@ export function parseErrorBody(text: string): string {
   return text.trim() || "no error message";
 }
 
-/**
- * The events in one NDJSON line of a streamed /api/chat response. A line that
- * reports an error throws it as an {@link OllamaRequestError}.
- */
-export function parseChatLine(line: string, model: string | null): ChatEvent[] {
+/** One NDJSON stream line as an object; a line reporting an error throws it typed. */
+function parseStreamLine(line: string, model: string | null): JsonObject {
   let json: unknown;
   try {
     json = JSON.parse(line);
@@ -69,7 +66,15 @@ export function parseChatLine(line: string, model: string | null): ChatEvent[] {
   if (typeof json.error === "string") {
     throw new OllamaRequestError(classifyServerError(null, json.error, model));
   }
+  return json;
+}
 
+/**
+ * The events in one NDJSON line of a streamed /api/chat response. A line that
+ * reports an error throws it as an {@link OllamaRequestError}.
+ */
+export function parseChatLine(line: string, model: string | null): ChatEvent[] {
+  const json = parseStreamLine(line, model);
   const events: ChatEvent[] = [];
   const message = isObject(json.message) ? json.message : {};
   if (typeof message.thinking === "string" && message.thinking) {
@@ -88,4 +93,18 @@ export function parseChatLine(line: string, model: string | null): ChatEvent[] {
     });
   }
   return events;
+}
+
+/**
+ * One line of a streamed /api/pull response. Ollama answers a pull of a missing
+ * model with HTTP 200 and then an error line, which throws here.
+ */
+export function parsePullLine(line: string, model: string | null): PullProgress {
+  const json = parseStreamLine(line, model);
+  if (typeof json.status !== "string") throw protocolError("pull line has no status");
+  return {
+    status: json.status,
+    total: typeof json.total === "number" ? json.total : null,
+    completed: typeof json.completed === "number" ? json.completed : null,
+  };
 }
