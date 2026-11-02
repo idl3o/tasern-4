@@ -23,6 +23,8 @@ import type { CharacterChoices } from "@/components/CharacterCreation";
 import { useWorldStore } from "@/state/worldStore";
 import { runWorldDreamer, type DreamerGenerate } from "@/lib/world/dreamer";
 import { safeUUID } from "@/lib/id";
+import { describeOllamaError } from "@/lib/ollama/errors";
+import { useOllamaStore } from "@/state/ollamaStore";
 import {
   rollD20,
   resolveRoll,
@@ -37,6 +39,13 @@ import {
 // Re-export so existing consumers keep importing these from the engine.
 export { rollD20, getRollTier } from "@/lib/rolls";
 export type { RollTier } from "@/lib/rolls";
+
+/** Why no narrator answered, in words the player can act on. */
+function noNarratorReason(ollamaWasTried: boolean): string {
+  const { lastFailure, error } = useOllamaStore.getState();
+  const failure = ollamaWasTried ? lastFailure : error;
+  return failure ? describeOllamaError(failure) : "No AI is available: start Ollama, or enable the in-browser AI.";
+}
 
 const MEMORY_EXTRACTION_THRESHOLD = 10;
 
@@ -303,8 +312,7 @@ export function useStoryEngine() {
         if (content !== null) return content;
       }
 
-      const fallback =
-        "The threads of fate tangle... something interferes with your arrival. (No AI available - please ensure Ollama is running)";
+      const fallback = `The threads of fate tangle... something interferes with your arrival. (${noNarratorReason(localOllamaAvailable)})`;
       setMessages((prev) =>
         prev.map((msg) => (msg.id === messageId ? { ...msg, content: fallback } : msg))
       );
