@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo } from "react";
-import { isTauri } from "@/hooks/useTauri";
 import { createOllamaClient, type OllamaClient } from "@/lib/ollama/client";
 import { OllamaRequestError, type OllamaError } from "@/lib/ollama/errors";
 import { rankModels, selectModel } from "@/lib/ollama/models";
 import { createHttpTransport } from "@/lib/ollama/transport";
 import { createTauriTransport } from "@/lib/ollama/transportTauri";
+import { isTauri } from "@/lib/platform";
 import type { ChatMessage, ModelName } from "@/lib/ollama/types";
 import { useOllamaStore } from "@/state/ollamaStore";
 

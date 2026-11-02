@@ -6,6 +6,7 @@ import { StoryInterface } from "@/components/StoryInterface";
 import { IntroSequence } from "@/components/IntroSequence";
 import OllamaSetup from "@/components/OllamaSetup";
 import { useTauri } from "@/hooks/useTauri";
+import { useLocalOllama } from "@/hooks/useLocalOllama";
 import { useStoryStore } from "@/state/storyStore";
 
 // Wallet UI is web-only; the desktop build has no wagmi provider mounted.
@@ -15,7 +16,9 @@ export default function Home() {
   const [showIntro, setShowIntro] = useState(true);
   const [introComplete, setIntroComplete] = useState(false);
   const [ollamaReady, setOllamaReady] = useState(false);
-  const { isInTauri, ollamaStatus } = useTauri();
+  const { isInTauri } = useTauri();
+  // Mounted here so Ollama is found, and its model warmed, while the intro plays.
+  const { available: ollamaAvailable } = useLocalOllama();
   const { activeStoryId, getActiveStory } = useStoryStore();
 
   const handleIntroComplete = () => {
@@ -28,9 +31,9 @@ export default function Home() {
     return <IntroSequence onComplete={handleIntroComplete} />;
   }
 
-  // In Tauri context, show Ollama setup if not ready
-  // Skip this in browser since StoryInterface handles its own AI detection
-  if (isInTauri && !ollamaReady && !ollamaStatus.running) {
+  // In Tauri, set up Ollama until a model can narrate (or the player skips).
+  // The browser build handles AI detection in StoryInterface.
+  if (isInTauri && !ollamaReady && !ollamaAvailable) {
     return <OllamaSetup onReady={() => setOllamaReady(true)} />;
   }
 
