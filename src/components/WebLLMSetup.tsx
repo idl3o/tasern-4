@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useWebLLM } from "@/hooks/useWebLLM";
-import { AVAILABLE_MODELS } from "@/state/webllmStore";
+import { WEBLLM_MODELS } from "@/state/webllmStore";
 
 interface WebLLMSetupProps {
   onReady?: () => void;
@@ -15,8 +15,8 @@ export function WebLLMSetup({ onReady, onSkip }: WebLLMSetupProps) {
     progress,
     progressText,
     error,
+    model,
     isReady,
-    isSupported,
     initialize,
     declineWebLLM,
     checkSupport,
@@ -49,11 +49,12 @@ export function WebLLMSetup({ onReady, onSkip }: WebLLMSetupProps) {
       <div className="panel p-6 max-w-md mx-auto text-center space-y-4">
         <h3 className="text-gold">Browser AI Unavailable</h3>
         <p className="text-parchment/70 text-sm">
-          Your browser doesn&apos;t support WebGPU, which is needed for local AI.
-          We&apos;ll use server-based AI instead.
+          Your browser doesn&apos;t support WebGPU, which the in-browser storyteller
+          needs. Recent Chrome or Edge can run it, or you can play through Ollama on
+          this machine.
         </p>
         <button onClick={handleSkip} className="btn-primary">
-          Continue with Server AI
+          Continue
         </button>
       </div>
     );
@@ -70,7 +71,7 @@ export function WebLLMSetup({ onReady, onSkip }: WebLLMSetupProps) {
             Retry
           </button>
           <button onClick={handleSkip} className="btn-primary">
-            Use Server AI
+            Skip
           </button>
         </div>
       </div>
@@ -108,7 +109,7 @@ export function WebLLMSetup({ onReady, onSkip }: WebLLMSetupProps) {
           onClick={handleSkip}
           className="w-full text-parchment/50 hover:text-parchment/70 text-sm"
         >
-          Skip and use server AI instead
+          Skip for now
         </button>
       </div>
     );
@@ -131,6 +132,7 @@ export function WebLLMSetup({ onReady, onSkip }: WebLLMSetupProps) {
   }
 
   // Idle - offer to download
+  const shown = model ?? WEBLLM_MODELS.f16;
   return (
     <div className="panel p-6 max-w-lg mx-auto space-y-6">
       <div className="text-center space-y-2">
@@ -144,11 +146,11 @@ export function WebLLMSetup({ onReady, onSkip }: WebLLMSetupProps) {
       <div className="bg-void/50 border border-gold/20 rounded-lg p-4 space-y-2">
         <div className="flex justify-between text-sm">
           <span className="text-parchment/60">Model</span>
-          <span className="text-parchment">Llama 3.2 3B</span>
+          <span className="text-parchment">{shown.name}</span>
         </div>
         <div className="flex justify-between text-sm">
           <span className="text-parchment/60">Download Size</span>
-          <span className="text-parchment">~2 GB (one-time)</span>
+          <span className="text-parchment">{shown.downloadSize} (one-time)</span>
         </div>
         <div className="flex justify-between text-sm">
           <span className="text-parchment/60">Requires</span>
@@ -161,7 +163,6 @@ export function WebLLMSetup({ onReady, onSkip }: WebLLMSetupProps) {
         <li>✓ Runs completely offline after download</li>
         <li>✓ No API keys needed</li>
         <li>✓ Your story stays private</li>
-        <li>✓ Falls back to server if needed</li>
       </ul>
 
       {/* Actions */}
@@ -173,10 +174,6 @@ export function WebLLMSetup({ onReady, onSkip }: WebLLMSetupProps) {
           Download AI
         </button>
       </div>
-
-      <p className="text-parchment/40 text-xs text-center">
-        You can change this later in settings
-      </p>
     </div>
   );
 }

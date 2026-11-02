@@ -18,6 +18,7 @@ import { WebLLMSetup } from "./WebLLMSetup";
 import { CharacterCreation, type CharacterChoices } from "./CharacterCreation";
 import { ChroniclePanel } from "./ChroniclePanel";
 import { useStoryStore, type SavedStory } from "@/state/storyStore";
+import { WEBLLM_MODELS } from "@/state/webllmStore";
 
 function formatTimeAgo(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -52,6 +53,7 @@ export function StoryInterface() {
   const {
     isReady: webLLMReady,
     status: webLLMStatus,
+    model: webLLMModel,
     hasDeclinedWebLLM,
   } = useWebLLM();
 
@@ -254,7 +256,9 @@ export function StoryInterface() {
             <div className="bg-void/50 border border-gold/30 rounded-lg p-4 text-sm text-parchment/80">
               <p className="font-semibold text-gold mb-2">AI Required</p>
               <p className="text-parchment/60 mb-4">
-                Click below to download the storytelling engine (~2GB). Runs entirely in your browser - no installation needed.
+                {webLLMStatus === "unsupported"
+                  ? "This browser lacks WebGPU, so the in-browser storyteller can't run here. Try recent Chrome or Edge, or use local Ollama below."
+                  : `Click below to download the storytelling engine (${(webLLMModel ?? WEBLLM_MODELS.f16).downloadSize}). Runs entirely in your browser - no installation needed.`}
               </p>
 
               <div className="border-t border-gold/20 pt-3 mt-3">
