@@ -7,20 +7,60 @@
 
 use serde::Serialize;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use tauri::ipc::Channel;
 use tauri::State;
 use tokio::task::AbortHandle;
 
-const OLLAMA_BASE: &str = "http://localhost:11434";
+/// Where to reach Ollama: OLLAMA_HOST read as Ollama's own CLI reads it, else
+/// 127.0.0.1:11434. Read once; the app sees the environment it was started with.
+pub(crate) fn ollama_base() -> &'static str {
+    static BASE: OnceLock<String> = OnceLock::new();
+    BASE.get_or_init(|| base_from_env(std::env::var("OLLAMA_HOST").ok().as_deref()))
+}
+
+/// "host:port" or "[v6]:port" (host may be empty); None when there is no port.
+fn split_host_port(s: &str) -> Option<(&str, &str)> {
+    if let Some(rest) = s.strip_prefix('[') {
+        let (host, after) = rest.split_once(']')?;
+        return Some((host, after.strip_prefix(':')?));
+    }
+    let (host, port) = s.rsplit_once(':')?;
+    if host.contains(':') {
+        return None; // a bare IPv6 address, no port
+    }
+    Some((host, port))
+}
+
+/// Mirrors Ollama's envconfig.Host: no scheme means http on 11434, an explicit
+/// http/https without a port means 80/443, and an invalid port falls back to the
+/// default. A bind-all address (0.0.0.0, ::) is reached through loopback.
+fn base_from_env(value: Option<&str>) -> String {
+    let raw = value.map(str::trim).unwrap_or("");
+    let (scheme, rest, default_port) = match raw.split_once("://") {
+        None => ("http", raw, "11434"),
+        Some(("https", rest)) => ("https", rest, "443"),
+        Some((scheme, rest)) => (scheme, rest, if scheme == "http" { "80" } else { "11434" }),
+    };
+    let hostport = rest.split('/').next().unwrap_or("");
+    let (host, port) = split_host_port(hostport).unwrap_or((hostport, default_port));
+    let port = port.parse::<u16>().map_or(default_port.to_string(), |p| p.to_string());
+    let host = match host.trim_matches(|c| c == '[' || c == ']') {
+        "" | "0.0.0.0" => "127.0.0.1".to_string(),
+        "::" => "[::1]".to_string(),
+        v6 if v6.contains(':') => format!("[{v6}]"),
+        other => other.to_string(),
+    };
+    format!("{scheme}://{host}:{port}")
+}
 
 /// Only these endpoints are reachable, so the proxy can't be pointed elsewhere.
 const ALLOWED_PATHS: &[&str] = &["/api/version", "/api/tags", "/api/show", "/api/chat", "/api/pull"];
 
 fn endpoint(path: &str) -> Result<String, String> {
     if ALLOWED_PATHS.contains(&path) {
-        Ok(format!("{OLLAMA_BASE}{path}"))
+        Ok(format!("{}{path}", ollama_base()))
     } else {
         Err(format!("path not allowed: {path}"))
     }
@@ -154,6 +194,27 @@ mod tests {
         assert!(drain_lines(&mut buf).is_empty());
         buf.extend_from_slice(&text[split..]);
         assert_eq!(drain_lines(&mut buf), vec!["{\"content\":\"é\"}"]);
+    }
+
+    #[test]
+    fn reads_ollama_host_like_the_ollama_cli() {
+        let cases = [
+            (None, "http://127.0.0.1:11434"),
+            (Some(""), "http://127.0.0.1:11434"),
+            (Some("0.0.0.0"), "http://127.0.0.1:11434"),
+            (Some("0.0.0.0:11435"), "http://127.0.0.1:11435"),
+            (Some(":11500"), "http://127.0.0.1:11500"),
+            (Some("myhost:8080"), "http://myhost:8080"),
+            (Some("http://myhost"), "http://myhost:80"),
+            (Some("https://ollama.example/"), "https://ollama.example:443"),
+            (Some("[::]:11434"), "http://[::1]:11434"),
+            (Some("::1"), "http://[::1]:11434"),
+            (Some("host:notaport"), "http://host:11434"),
+            (Some("  127.0.0.1:11434  "), "http://127.0.0.1:11434"),
+        ];
+        for (value, expected) in cases {
+            assert_eq!(base_from_env(value), expected, "OLLAMA_HOST={value:?}");
+        }
     }
 
     #[test]

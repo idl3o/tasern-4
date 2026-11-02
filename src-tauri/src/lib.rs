@@ -38,7 +38,7 @@ async fn check_ollama_installed() -> Result<bool, String> {
 /// Whether the Ollama server answers, used to wait for one we started.
 async fn ollama_running() -> bool {
     http()
-        .get("http://localhost:11434/api/version")
+        .get(format!("{}/api/version", ollama_proxy::ollama_base()))
         .timeout(Duration::from_secs(2))
         .send()
         .await
