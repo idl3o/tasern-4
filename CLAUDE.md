@@ -69,6 +69,8 @@ These files provide the **seed context** for AI story generation. Rich enough to
 ## Web3 Integration
 
 > **Wallet cordoned off (2026-11-02) — a decision, do not undo.** All wallet code lives in `src/lib/wallet/` and loads only when `NEXT_PUBLIC_ENABLE_WALLET=true` in a non-Tauri build (`WALLET_ENABLED` in `flag.ts`). Never import `src/lib/wallet/*` statically: building the wagmi config opens WalletConnect's relay socket, which is how the desktop app came to phone out to it.
+>
+> **Dev-server leak (2026-11-03) — do not regress.** `next dev` re-evaluates server modules on every rebuild and WalletConnect Core has no teardown, so with the wallet on each hot reload used to add a live relay client (`Init() was called N times`). A dev server left running overnight reached 100 GB of commit and crashed DWM. `src/lib/wallet/wagmi.ts` now keeps one config per process on `globalThis` (`wagmi.test.ts` guards it). Don't leave `npm run dev` running unattended across sessions.
 
 ### Identity
 - **Wallet = Character** — Your address is your persistent identity
@@ -123,10 +125,10 @@ First question: *What do you believe?* — because in Tasern, that has consequen
 
 ## Technical Architecture
 
-### Desktop App (Primary)
-- **Tauri 2.0** - Rust backend, WebView frontend
 > **Web Ollama connects on a gesture (2026-11-04) — do not regress.** Chrome/Edge 142+ ask the player before a public https page may reach localhost, on the first attempt. `useLocalOllama` therefore probes on page load only when that can't raise the question (desktop proxy, page itself on localhost, a browser without the prompt, or a grant already given); otherwise it sits `idle` until `connectOllama()` from the Connect button in `OllamaConnectPanel`. A denied or dismissed prompt is the typed `loopback-denied`, never "Ollama isn't running". The recommended/starter model is `gemma4` (llama3.2 scored 1/6 on the tag protocol in the 2026-11-02 playtest). `OLLAMA_ORIGINS=*` is never recommended anywhere.
 
+### Desktop App (Primary)
+- **Tauri 2.0** - Rust backend, WebView frontend
 - **Ollama** - Local LLM for story generation
 - **Next.js 14** - Static export for UI
 - **WebLLM** - Browser fallback if Ollama unavailable
