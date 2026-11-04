@@ -4,6 +4,8 @@
 export type OllamaError =
   | { kind: "unreachable" }
   | { kind: "origin-blocked"; origin: string }
+  /** The browser itself refused to let this page reach localhost (Chrome/Edge local network access). */
+  | { kind: "loopback-denied"; state: "denied" | "prompt" }
   | { kind: "model-missing"; model: string }
   | { kind: "out-of-memory"; message: string }
   | { kind: "stalled"; afterMs: number }
@@ -29,7 +31,11 @@ export function describeOllamaError(e: OllamaError): string {
     case "unreachable":
       return "Ollama isn't running on this machine.";
     case "origin-blocked":
-      return `Ollama is running but refuses requests from ${e.origin}. Add it to OLLAMA_ORIGINS and restart Ollama.`;
+      return `Ollama is running but hasn't been told to accept this site (${e.origin}). Follow the "allow this site" step, then try again.`;
+    case "loopback-denied":
+      return e.state === "denied"
+        ? "Your browser is blocking this site from reaching programs on your computer. Allow local network access in the site settings (the icon beside the address), then try again."
+        : "Your browser asked whether this site may reach Ollama on your computer, and it wasn't allowed yet. Try again and choose Allow.";
     case "model-missing":
       return `Ollama doesn't have the model "${e.model}". Pull it or choose another.`;
     case "out-of-memory":

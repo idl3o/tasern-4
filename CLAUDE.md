@@ -125,6 +125,8 @@ First question: *What do you believe?* — because in Tasern, that has consequen
 
 ### Desktop App (Primary)
 - **Tauri 2.0** - Rust backend, WebView frontend
+> **Web Ollama connects on a gesture (2026-11-04) — do not regress.** Chrome/Edge 142+ ask the player before a public https page may reach localhost, on the first attempt. `useLocalOllama` therefore probes on page load only when that can't raise the question (desktop proxy, page itself on localhost, a browser without the prompt, or a grant already given); otherwise it sits `idle` until `connectOllama()` from the Connect button in `OllamaConnectPanel`. A denied or dismissed prompt is the typed `loopback-denied`, never "Ollama isn't running". The recommended/starter model is `gemma4` (llama3.2 scored 1/6 on the tag protocol in the 2026-11-02 playtest). `OLLAMA_ORIGINS=*` is never recommended anywhere.
+
 - **Ollama** - Local LLM for story generation
 - **Next.js 14** - Static export for UI
 - **WebLLM** - Browser fallback if Ollama unavailable

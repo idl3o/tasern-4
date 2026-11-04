@@ -5,8 +5,9 @@ import { useLocalOllama } from '@/hooks/useLocalOllama';
 import { useTauri } from '@/hooks/useTauri';
 import { describeOllamaError } from '@/lib/ollama/errors';
 
-// Offered only when no chat model is installed: small enough (~2 GB) for a first download.
-const STARTER_MODEL = 'llama3.2';
+// Offered only when no chat model is installed. gemma4 is the model the narrator's tag
+// protocol was tuned against (llama3.2 scored 1/6 in the 2026-11-02 playtest); ~7 GB.
+const STARTER_MODEL = 'gemma4';
 
 type Step = 'checking' | 'install' | 'start' | 'pull' | 'ready';
 
@@ -98,7 +99,7 @@ export default function OllamaSetup({ onReady }: OllamaSetupProps) {
             <div className="text-6xl mb-4">📥</div>
             <h2 className="text-xl text-purple-200 mb-4">Download a storytelling model</h2>
             <p className="text-gray-400 mb-6">
-              Ollama is running but has no model that can tell stories. {STARTER_MODEL} is a one-time ~2 GB download.
+              Ollama is running but has no model that can tell stories. {STARTER_MODEL} is a one-time download of about 7 GB.
             </p>
             {pull ? <PullProgressBar status={pull.status} fraction={pull.fraction} /> : (
               <button onClick={() => void pullModel(STARTER_MODEL)} className={PRIMARY}>

@@ -5,7 +5,9 @@ import { persist } from "zustand/middleware";
 import type { OllamaError } from "@/lib/ollama/errors";
 import type { ModelDetails, ModelName } from "@/lib/ollama/types";
 
-export type OllamaStatus = "checking" | "ready" | "unavailable";
+// "idle": the web build hasn't probed localhost because the browser would ask the
+// player first (see lib/ollama/loopbackPermission.ts); the player connects by gesture.
+export type OllamaStatus = "idle" | "checking" | "ready" | "unavailable";
 
 export interface PullState {
   model: string;

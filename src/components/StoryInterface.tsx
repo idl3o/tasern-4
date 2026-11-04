@@ -19,6 +19,7 @@ import { CharacterCreation, type CharacterChoices } from "./CharacterCreation";
 import { ChroniclePanel } from "./ChroniclePanel";
 import { useStoryStore, type SavedStory } from "@/state/storyStore";
 import { describeOllamaError } from "@/lib/ollama/errors";
+import OllamaConnectPanel, { RECOMMENDED_MODEL } from "./OllamaConnectPanel";
 import { useWebLLMStore } from "@/state/webllmStore";
 
 function formatTimeAgo(timestamp: number): string {
@@ -64,6 +65,8 @@ export function StoryInterface() {
     models: ollamaModels,
     selectedModel: localOllamaModel,
     chooseModel: chooseOllamaModel,
+    isIdle: ollamaIdle,
+    connect: connectOllama,
     error: ollamaError,
     lastFailure: ollamaFailure,
     warming: ollamaWarming,
@@ -222,8 +225,6 @@ export function StoryInterface() {
   }
 
   const hasAnyAI = localOllamaAvailable || webLLMReady;
-  // Ollama must allow the origin this page is actually served from.
-  const pageOrigin = typeof window === "undefined" ? "https://tasern-4.vercel.app" : window.location.origin;
   const isLoadingWebLLM = webLLMStatus === "downloading" || webLLMStatus === "loading";
   const isCheckingAI = checkingLocalOllama;
 
@@ -273,10 +274,10 @@ export function StoryInterface() {
                 {localOllamaAvailable && ollamaFailure && (
                   <div className="text-gold">{describeOllamaError(ollamaFailure)}</div>
                 )}
-                {!localOllamaAvailable && ollamaRunning && (
-                  <div className="text-gold">Ollama is running but has no chat models. Pull one, e.g. ollama pull llama3.2</div>
+                {!localOllamaAvailable && ollamaRunning && !showAdvancedSetup && (
+                  <div className="text-gold">Ollama is running but has no chat models. Pull one, e.g. ollama pull {RECOMMENDED_MODEL}</div>
                 )}
-                {!localOllamaAvailable && ollamaError && ollamaError.kind !== "unreachable" && (
+                {!localOllamaAvailable && ollamaError && ollamaError.kind !== "unreachable" && !showAdvancedSetup && (
                   <div className="text-gold">{describeOllamaError(ollamaError)}</div>
                 )}
                 {webLLMReady ? (
@@ -294,54 +295,22 @@ export function StoryInterface() {
           {!isCheckingAI && !hasAnyAI && !isLoadingWebLLM && (
             <div className="bg-void/50 border border-gold/30 rounded-lg p-4 text-sm text-parchment/80">
               <p className="font-semibold text-gold mb-2">AI Required</p>
-              <p className="text-parchment/60 mb-4">
+              <p className="text-parchment/60">
                 Click below to download the storytelling engine (~2GB). Runs entirely in your browser - no installation needed.
               </p>
-
-              <div className="border-t border-gold/20 pt-3 mt-3">
-                <button
-                  onClick={() => setShowAdvancedSetup(!showAdvancedSetup)}
-                  className="text-xs text-parchment/40 hover:text-parchment/60 flex items-center gap-1"
-                >
-                  <span className={`transition-transform ${showAdvancedSetup ? "rotate-90" : ""}`}>&#9654;</span>
-                  Advanced: Use local Ollama instead
-                </button>
-
-                {showAdvancedSetup && (
-                  <div className="mt-3 p-3 bg-gray-900/50 rounded text-xs text-parchment/50">
-                    <p className="mb-2 text-parchment/60">For faster performance with local Ollama:</p>
-                    <ol className="space-y-1.5 list-decimal list-inside">
-                      <li>
-                        Install from{" "}
-                        <a href="https://ollama.ai" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline hover:text-blue-300">
-                          ollama.ai
-                        </a>
-                      </li>
-                      <li>
-                        Run: <code className="bg-gray-800 px-1 rounded text-green-400">ollama pull llama3.2</code>
-                      </li>
-                      {typeof window !== "undefined" && navigator.platform?.includes("Win") ? (
-                        <li>
-                          Allow this site: quit Ollama from the system tray, run
-                          <div className="mt-1 p-2 bg-gray-800 rounded font-mono text-green-400 select-all text-[10px]">
-                            setx OLLAMA_ORIGINS {pageOrigin}
-                          </div>
-                          then start Ollama again from the Start menu
-                        </li>
-                      ) : (
-                        <li>
-                          Start with this site allowed:
-                          <div className="mt-1 p-2 bg-gray-800 rounded font-mono text-green-400 select-all text-[10px]">
-                            OLLAMA_ORIGINS={pageOrigin} ollama serve
-                          </div>
-                        </li>
-                      )}
-                      <li>Refresh this page</li>
-                    </ol>
-                  </div>
-                )}
-              </div>
             </div>
+          )}
+
+          {!localOllamaAvailable && !isLoadingWebLLM && (
+            <OllamaConnectPanel
+              open={showAdvancedSetup}
+              onToggle={() => setShowAdvancedSetup(!showAdvancedSetup)}
+              isIdle={ollamaIdle}
+              isChecking={checkingLocalOllama}
+              isRunning={ollamaRunning}
+              error={ollamaError}
+              onConnect={() => void connectOllama()}
+            />
           )}
 
           <div className="space-y-3">

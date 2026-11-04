@@ -164,8 +164,8 @@ describe("desktop setup", () => {
     fake.models = [];
     await launch();
     await screen.findByRole("heading", { name: /download a storytelling model/i });
-    click(/download llama3\.2/i);
+    click(/download gemma4/i);
     await screen.findByText(/local ollama ready/i);
-    expect(fake.models).toContain("llama3.2:latest");
+    expect(fake.models).toContain("gemma4:latest");
   });
 });

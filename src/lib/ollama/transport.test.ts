@@ -31,6 +31,27 @@ describe("createHttpTransport", () => {
     expect(await failure(down.json("/api/tags", undefined, never))).toEqual({ kind: "unreachable" });
   });
 
+  it("names the browser's own refusal before blaming Ollama", async () => {
+    const down = corsFailingFetch(false);
+    const denied = createHttpTransport("http://ollama.test", down, async () => "denied");
+    const dismissed = createHttpTransport("http://ollama.test", down, async () => "prompt");
+    const granted = createHttpTransport("http://ollama.test", down, async () => "granted");
+    expect(await failure(denied.json("/api/tags", undefined, never))).toEqual({ kind: "loopback-denied", state: "denied" });
+    expect(await failure(dismissed.json("/api/tags", undefined, never))).toEqual({ kind: "loopback-denied", state: "prompt" });
+    expect(await failure(granted.json("/api/tags", undefined, never))).toEqual({ kind: "unreachable" });
+  });
+
+  it("declares the loopback target on every request, as Chrome requires", async () => {
+    const inits: RequestInit[] = [];
+    const transport = createHttpTransport("http://ollama.test", async (_input, init) => {
+      inits.push(init ?? {});
+      return Response.json({});
+    });
+    await transport.json("/api/tags", undefined, never);
+    await transport.json("/api/show", { model: "m" }, never);
+    expect(inits.map((i) => (i as { targetAddressSpace?: string }).targetAddressSpace)).toEqual(["loopback", "loopback"]);
+  });
+
   it("keeps Ollama's message from an HTTP error body", async () => {
     const transport = createHttpTransport("http://ollama.test", async () =>
       new Response(fixture("error-model-missing.json"), { status: 404 })
@@ -65,7 +86,9 @@ describe("errors", () => {
 
   it("describes every kind in words a player can act on", () => {
     const blocked = describeOllamaError({ kind: "origin-blocked", origin: "https://tasern-4.vercel.app" });
-    expect(blocked).toContain("OLLAMA_ORIGINS");
+    expect(blocked).toMatch(/allow this site/i);
     expect(blocked).toContain("https://tasern-4.vercel.app");
+    expect(describeOllamaError({ kind: "loopback-denied", state: "denied" })).toMatch(/your browser is blocking/i);
+    expect(describeOllamaError({ kind: "loopback-denied", state: "prompt" })).toMatch(/choose allow/i);
   });
 });

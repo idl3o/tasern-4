@@ -5,6 +5,7 @@ import { createOllamaClient, type OllamaClient } from "@/lib/ollama/client";
 import { OllamaRequestError, type OllamaError } from "@/lib/ollama/errors";
 import { rankModels, selectModel } from "@/lib/ollama/models";
 import { createHttpTransport } from "@/lib/ollama/transport";
+import { pageIsLoopback, queryLoopbackPermission } from "@/lib/ollama/loopbackPermission";
 import { createTauriTransport } from "@/lib/ollama/transportTauri";
 import { isTauri } from "@/lib/platform";
 import { CONTEXT_TOKENS } from "@/lib/chapters";
@@ -53,13 +54,35 @@ export function recheckOllama(): Promise<void> {
       useOllamaStore.setState({ status: "unavailable", models: [], error: toOllamaError(e), warmed: null });
     } finally {
       refreshing = null;
-      if (users > 0) {
-        const ready = useOllamaStore.getState().status === "ready";
-        pollTimer = setTimeout(() => void recheckOllama(), ready ? POLL_READY_MS : POLL_UNAVAILABLE_MS);
+      const { status, error } = useOllamaStore.getState();
+      // A browser still waiting for the player's answer would ask again on every poll.
+      if (users > 0 && error?.kind !== "loopback-denied") {
+        pollTimer = setTimeout(() => void recheckOllama(), status === "ready" ? POLL_READY_MS : POLL_UNAVAILABLE_MS);
       }
     }
   })();
   return refreshing;
+}
+
+/**
+ * The player's gesture to reach their own Ollama. On the web the first attempt is
+ * what makes Chrome/Edge ask the player; it must come from a click, never from load.
+ */
+export function connectOllama(): Promise<void> {
+  if (useOllamaStore.getState().status === "idle") useOllamaStore.setState({ status: "checking" });
+  return recheckOllama();
+}
+
+/** Probes on page load only where that can't make the browser put a question to the player. */
+async function probeOnMount(): Promise<void> {
+  if (isTauri() || pageIsLoopback()) return recheckOllama();
+  const permission = await queryLoopbackPermission();
+  if (permission === "granted" || permission === "unsupported") return recheckOllama();
+  if (permission === "denied") {
+    useOllamaStore.setState({ status: "unavailable", models: [], error: { kind: "loopback-denied", state: "denied" } });
+    return;
+  }
+  useOllamaStore.setState({ status: "idle", models: [], error: null });
 }
 
 /** Loads `model` ahead of the first turn and releases the model it replaces. */
@@ -137,7 +160,7 @@ export function useLocalOllama() {
 
   useEffect(() => {
     users++;
-    if (users === 1) void recheckOllama();
+    if (users === 1) void probeOnMount();
     return () => {
       users--;
       if (users === 0) clearTimeout(pollTimer);
@@ -197,6 +220,7 @@ export function useLocalOllama() {
 
   return {
     available: status === "ready" && selected !== null,
+    isIdle: status === "idle",
     isChecking: status === "checking",
     isRunning: status === "ready",
     models: models.map((m) => m.name),
@@ -209,6 +233,7 @@ export function useLocalOllama() {
     chooseModel: store.setChosenModel,
     pullModel,
     recheck: recheckOllama,
+    connect: connectOllama,
     generate,
   };
 }

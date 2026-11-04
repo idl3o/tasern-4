@@ -4,6 +4,7 @@
 // NDJSON lines; parsing stays in parse.ts, timing in client.ts.
 
 import { classifyServerError, OllamaRequestError } from "./errors";
+import { pageIsLoopback, queryLoopbackPermission, type LoopbackPermission } from "./loopbackPermission";
 import { ndjsonLines, readerChunks } from "./ndjson";
 import { parseErrorBody } from "./parse";
 
@@ -28,25 +29,39 @@ export function httpError(status: number, bodyText: string, body: object | undef
   return new OllamaRequestError(classifyServerError(status, parseErrorBody(bodyText), modelOf(body)));
 }
 
+// Chrome needs the loopback target declared on an http:// request from an https:// page.
+const LOOPBACK_INIT = { targetAddressSpace: "loopback" } as const;
+
 /**
- * A CORS refusal and a closed port surface as the same TypeError. An opaque no-cors
- * request still succeeds when the server is up, which tells the two apart.
+ * A CORS refusal, a closed port and a browser permission refusal all surface as the
+ * same TypeError. The permission state and an opaque no-cors probe (which succeeds
+ * whenever the server is up) tell them apart.
  */
-async function diagnoseNetworkFailure(base: string, fetchImpl: typeof fetch) {
+async function diagnoseNetworkFailure(
+  base: string,
+  fetchImpl: typeof fetch,
+  permission: () => Promise<LoopbackPermission>
+) {
+  if ((await permission()) === "denied") return new OllamaRequestError({ kind: "loopback-denied", state: "denied" });
   try {
-    await fetchImpl(`${base}/api/version`, { mode: "no-cors", signal: AbortSignal.timeout(2000) });
+    await fetchImpl(`${base}/api/version`, { ...LOOPBACK_INIT, mode: "no-cors", signal: AbortSignal.timeout(2000) });
     const origin = typeof location === "undefined" ? "this page" : location.origin;
     return new OllamaRequestError({ kind: "origin-blocked", origin });
   } catch {
-    // The probe failing is the diagnosis: nothing is listening.
+    // Still unanswered after a public page's attempt: the player dismissed the browser's
+    // question, and nothing can reach Ollama until it is answered. Otherwise nothing is listening.
+    if ((await permission()) === "prompt" && !pageIsLoopback()) {
+      return new OllamaRequestError({ kind: "loopback-denied", state: "prompt" });
+    }
     return new OllamaRequestError({ kind: "unreachable" });
   }
 }
 
-/** Direct browser-to-Ollama transport. `fetchImpl` is injectable for tests. */
+/** Direct browser-to-Ollama transport. `fetchImpl` and `permission` are injectable for tests. */
 export function createHttpTransport(
   base: string = OLLAMA_URL,
-  fetchImpl: typeof fetch = (...args) => fetch(...args)
+  fetchImpl: typeof fetch = (...args) => fetch(...args),
+  permission: () => Promise<LoopbackPermission> = queryLoopbackPermission
 ): OllamaTransport {
   async function send(path: OllamaPath, body: object | undefined, signal: AbortSignal) {
     let res: Response;
@@ -54,12 +69,12 @@ export function createHttpTransport(
       res = await fetchImpl(
         `${base}${path}`,
         body === undefined
-          ? { signal }
-          : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal }
+          ? { ...LOOPBACK_INIT, signal }
+          : { ...LOOPBACK_INIT, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal }
       );
     } catch (e) {
       if (signal.aborted) throw new OllamaRequestError({ kind: "aborted" });
-      throw await diagnoseNetworkFailure(base, fetchImpl);
+      throw await diagnoseNetworkFailure(base, fetchImpl, permission);
     }
     if (!res.ok) throw httpError(res.status, await res.text(), body);
     return res;
