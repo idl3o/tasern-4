@@ -116,11 +116,9 @@ describe("start screen", () => {
     await act(() => recheckOllama());
     await screen.findByText(/no ai backend available/i);
     click(/advanced: use local ollama instead/i);
-    // This page is served from localhost, so the honest step is that Ollama already allows it.
-    await screen.findByText(/already accepts pages served from your own machine/i);
-    expect(screen.queryByText(/OLLAMA_ORIGINS/)).toBeNull();
+    await screen.findByText(/ollama isn't running on this machine/i);
     fake.up = true;
-    await act(() => recheckOllama());
+    click(/check again/i);
     await screen.findByText(/local ollama ready/i);
   });
 

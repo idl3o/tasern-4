@@ -65,8 +65,6 @@ export function StoryInterface() {
     models: ollamaModels,
     selectedModel: localOllamaModel,
     chooseModel: chooseOllamaModel,
-    isIdle: ollamaIdle,
-    connect: connectOllama,
     error: ollamaError,
     lastFailure: ollamaFailure,
     warming: ollamaWarming,
@@ -302,15 +300,7 @@ export function StoryInterface() {
           )}
 
           {!localOllamaAvailable && !isLoadingWebLLM && (
-            <OllamaConnectPanel
-              open={showAdvancedSetup}
-              onToggle={() => setShowAdvancedSetup(!showAdvancedSetup)}
-              isIdle={ollamaIdle}
-              isChecking={checkingLocalOllama}
-              isRunning={ollamaRunning}
-              error={ollamaError}
-              onConnect={() => void connectOllama()}
-            />
+            <OllamaConnectPanel open={showAdvancedSetup} onToggle={() => setShowAdvancedSetup(!showAdvancedSetup)} />
           )}
 
           <div className="space-y-3">

@@ -63,8 +63,7 @@ describe("hosted web build behind the browser's local-network question", () => {
     await screen.findByText(/no ai backend available/i);
     expect(fetchSpy).not.toHaveBeenCalled();
     click(/advanced: use local ollama instead/i);
-    // jsdom reports no OS, so the Linux steps show; the origin named is the page's own.
-    expect(await screen.findAllByText(/OLLAMA_ORIGINS=https:\/\/tasern-4\.vercel\.app/)).not.toHaveLength(0);
+    await screen.findByText(/chrome and edge will first ask/i);
     click(/connect to ollama/i);
     await screen.findByText(/local ollama ready/i);
     expect(fetchSpy).toHaveBeenCalled();
@@ -81,5 +80,32 @@ describe("hosted web build behind the browser's local-network question", () => {
     permission = "granted";
     await toStartScreen();
     await screen.findByText(/local ollama ready/i);
+  });
+
+  it("N33: Ollama refusing the site shows only the allow step, with this page's origin, until it is allowed", async () => {
+    permission = "prompt";
+    fake.blocked = true;
+    await toStartScreen();
+    click(/advanced: use local ollama instead/i);
+    click(/connect to ollama/i);
+    await screen.findByText(/hasn't been told to accept this site/i);
+    // jsdom reports no OS, so the Linux route shows; the origin named is the page's own.
+    expect(await screen.findAllByText(/OLLAMA_ORIGINS=https:\/\/tasern-4\.vercel\.app/)).not.toHaveLength(0);
+    expect(screen.queryByText(/ollama\.com\/download/)).toBeNull(); // step 1 is behind them
+    fake.blocked = false;
+    click(/check again/i);
+    await screen.findByText(/local ollama ready/i);
+  });
+
+  it("N34: with no storyteller installed, the app downloads gemma4 itself", async () => {
+    permission = "prompt";
+    fake.models = [];
+    await toStartScreen();
+    click(/advanced: use local ollama instead/i);
+    click(/connect to ollama/i);
+    await screen.findByText(/no model that can tell stories/i);
+    click(/download gemma4/i);
+    await screen.findByText(/local ollama ready/i);
+    expect(fake.models).toContain("gemma4:latest");
   });
 });

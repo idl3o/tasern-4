@@ -66,6 +66,8 @@ export interface FakeOllama {
   fetch: typeof fetch;
   /** Whether anything answers; when false, requests fail like a closed port. */
   up: boolean;
+  /** Ollama is up but this page's origin isn't allowed: CORS requests fail, a no-cors probe still lands. */
+  blocked: boolean;
   /** Installed model names; a pull adds to it. */
   models: string[];
   /** Narrator turns requested so far: the last user message of each /api/chat. */
@@ -124,6 +126,7 @@ export function createFakeOllama(models: string[] = ["gemma4:latest", "llama3.2:
   let gate: Promise<void> | null = null;
   const fake: FakeOllama = {
     up: true,
+    blocked: false,
     models: [...models],
     turns: [],
     management: [],
@@ -140,6 +143,7 @@ export function createFakeOllama(models: string[] = ["gemma4:latest", "llama3.2:
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
       if (!fake.up) throw new TypeError("Failed to fetch");
       if (init?.mode === "no-cors") return new Response(null, { status: 200 });
+      if (fake.blocked) throw new TypeError("Failed to fetch");
       const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
       switch (url.pathname) {
         case "/api/tags":

@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useLocalOllama } from '@/hooks/useLocalOllama';
 import { useTauri } from '@/hooks/useTauri';
 import { describeOllamaError } from '@/lib/ollama/errors';
+import PullProgressBar from './PullProgressBar';
 
 // Offered only when no chat model is installed. gemma4 is the model the narrator's tag
 // protocol was tuned against (llama3.2 scored 1/6 in the 2026-11-02 playtest); ~7 GB.
@@ -143,28 +144,6 @@ export default function OllamaSetup({ onReady }: OllamaSetupProps) {
 const PRIMARY =
   'w-full py-3 px-6 bg-purple-600 hover:bg-purple-500 disabled:opacity-60 text-white rounded-lg font-medium transition-colors mb-4';
 const SECONDARY = 'w-full py-2 px-6 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition-colors';
-
-function PullProgressBar({ status, fraction }: { status: string; fraction: number | null }) {
-  const percent = fraction === null ? null : Math.round(fraction * 100);
-  return (
-    <div role="status" aria-live="polite" className="mb-4">
-      <div
-        className="h-2 bg-gray-700 rounded overflow-hidden"
-        role="progressbar"
-        aria-label="Model download"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={percent ?? undefined}
-      >
-        <div className="h-full bg-purple-500 transition-all" style={{ width: `${percent ?? 0}%` }} />
-      </div>
-      <p className="text-xs text-gray-400 mt-2">
-        {status}
-        {percent !== null && ` - ${percent}%`}
-      </p>
-    </div>
-  );
-}
 
 function StepIndicator({
   step,
